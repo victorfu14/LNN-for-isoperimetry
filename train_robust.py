@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # TODO: Define our loss
 def eval_loss(data1, data2):
-    return (data1 - data2).mean()
+    return -(data1 - data2).mean()  # the loss should be negative since we want to maximize it
 
 
 def get_args():
