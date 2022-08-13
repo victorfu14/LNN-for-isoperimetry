@@ -18,6 +18,7 @@ lower_limit = ((0 - mu)/ std)
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
+# TODO: Redefine the dataloader
 def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
