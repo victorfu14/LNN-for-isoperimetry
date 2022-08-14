@@ -1,3 +1,8 @@
+# LNN for Isoperimetry
+
+This repo utilize SOC structure (https://github.com/singlasahil14/SOC) to verify whether real world datasets satisfy isoperimety properties proposed by (https://arxiv.org/abs/2105.12806).
+
+
 # Skew Orthogonal Convolutions
 
 + **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions. 
