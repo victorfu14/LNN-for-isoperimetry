@@ -151,7 +151,7 @@ def main():
     model, opt = amp.initialize(model, opt, **amp_args)
 
     # criterion = nn.CrossEntropyLoss()
-    criterion = eval_loss
+    criterion = eval_loss()
 
     lr_steps = args.epochs * len(train_loader)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
@@ -176,16 +176,10 @@ def main():
         train_robust = 0
         train_acc = 0
         train_n = 0
-        for i, (X, _) in enumerate(train_loader):
-            X = X.cuda()
-            if X.shape[0] != args.batch_size * 2:
-                continue
-            # split X into X_1 and X_2
-            X_1, X_2 = X[:args.batch_size, :, :, :], X[args.batch_size:, :, :, :]
+        for i, (X_1, X_2) in enumerate(train_loader):
+            X_1, X_2 = X_1.cuda(), X_2.cuda()
 
-            # print(X_1.shape, X_2.shape)
             output_1, output_2 = model(X_1), model(X_2)
-            # print(output_1.shape, output_2.shape)
             # curr_correct = (output_1.max(1)[1] == y)
             # if args.lln:
             #     curr_cert = lln_certificates(output_1, y, model.last_layer, L)
@@ -200,13 +194,12 @@ def main():
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += ce_loss.item()
+            train_loss += ce_loss.item() * y.size(0)
             # train_cert += (curr_cert * curr_correct).sum().item()
             # train_robust += ((curr_cert > (args.epsilon/255.)) * curr_correct).sum().item()
             # train_acc += curr_correct.sum().item()
             # train_n += y.size(0)
-            # train_n += X.size(0)
-            train_n += 1
+            train_n += X_1.size(0)
             scheduler.step()
 
         # Check current test accuracy of model

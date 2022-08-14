@@ -6,19 +6,17 @@
 
 #SBATCH --mail-type=END,FAIL
 
-#SBATCH --partition=gpu
+#SBATCH --partition=standard
 
 #SBATCH --nodes=1
 
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=16gb
-#SBATCH --gres=gpu:1
-
 
 #SBATCH --time=3-00:00:00
 
-#SBATCH --account=vvh0
+#SBATCH --account=vvh
 
 #SBATCH --output=/home/%u/logs/%x-%j.log
 
@@ -27,7 +25,7 @@ conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train_robust.py --conv-layer soc --block-size 4 --dataset cifar100
+python train_robust.py --conv-layer CONV --activation ACT --num-blocks BLOCKS --dataset DATASET --gamma GAMMA
 
 /bin/hostname
 sleep 60

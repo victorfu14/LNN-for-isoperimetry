@@ -1,6 +1,6 @@
 # Skew Orthogonal Convolutions
 
-+ **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions.
++ **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions. 
 + **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
 + **Certificate Regularization (CR)** leads to significantly improved robustness certificates.
 + **Householder Activations (HH)** improve the performance for deeper networks.
@@ -8,16 +8,14 @@
 ## Prerequisites
 
 + Python 3.7 or 3.8
-+ Pytorch 1.8
-+ requests. Can be installed using ```pip install requests```
++ Pytorch 1.8 
 + einops. Can be installed using ```pip install einops```
 + NVIDIA Apex. Can be installed using ```conda install -c conda-forge nvidia-apex```
 + A recent NVIDIA GPU
 
 ## How to train 1-Lipschitz Convnets?
 
-```python train_robust.py --conv-layer CONV --activation ACT --block-size BLOCKS --dataset DATASET --gamma GAMMA```
-
+```python train_robust.py --conv-layer CONV --activation ACT --num-blocks BLOCKS --dataset DATASET --gamma GAMMA```
 + CONV: bcop, cayley, soc
 + ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
 + BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
@@ -26,9 +24,7 @@
 + DATASET: cifar10/cifar100.
 
 ## How to train Standard Convnets using Orthogonal Convolutions?
-
 ```python train_standard.py --conv-layer CONV --model-name MODEL --dataset DATASET```
-
 + CONV: bcop, cayley, soc (Use ```standard``` to train using standard convolution)
 + MODEL: resnet18, resnet34, resnet50, resnet101, resnet152
 + DATASET: cifar10, cifar100
@@ -38,14 +34,13 @@
 ![demo](./figures/SOC_demo.png)
 
 ## Demonstration of Householder Activations
-
 + Illustration of the hh1 activation function
 ![demo](./figures/hh1_demo.png)
 + Illustration of the hh2 activation function (right)
 ![demo](./figures/hh2_demo.png)
 
-## Citations
 
+## Citations
 If you find this repository useful for your research, please cite:
 
 ```
