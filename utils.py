@@ -1,3 +1,7 @@
+from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
+from skew_ortho_conv import SOC
+from block_ortho_conv import BCOP
+from cayley_ortho_conv import Cayley, CayleyLinear
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,19 +16,17 @@ cifar10_std = (0.2507, 0.2507, 0.2507)
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 
-upper_limit = ((1 - mu)/ std)
-lower_limit = ((0 - mu)/ std)
+upper_limit = ((1 - mu) / std)
+lower_limit = ((0 - mu) / std)
+
 
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
 # TODO: Redefine the dataloader
+
+
 def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True):
-    if dataset_name == 'cifar10':
-        dataset_func = datasets.CIFAR10
-    elif dataset_name == 'cifar100':
-        dataset_func = datasets.CIFAR100
-    
     if normalize:
         train_transform = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
@@ -45,27 +47,33 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True):
         test_transform = transforms.Compose([
             transforms.ToTensor(),
         ])
-        
+
     num_workers = 4
+    if dataset_name == 'cifar10':
+        dataset_func = datasets.CIFAR10
+    elif dataset_name == 'cifar100':
+        dataset_func = datasets.CIFAR100
+
     train_dataset = dataset_func(
         dir_, train=True, transform=train_transform, download=True)
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
     train_loader = torch.utils.data.DataLoader(
         dataset=train_dataset,
-        batch_size=batch_size,
+        batch_size=batch_size * 2,  # to get 2 x for x and x'
         shuffle=True,
         pin_memory=True,
         num_workers=num_workers,
     )
     test_loader = torch.utils.data.DataLoader(
         dataset=test_dataset,
-        batch_size=batch_size,
+        batch_size=batch_size * 2,  # to get 2 x for x'' and x'''
         shuffle=True,
         pin_memory=True,
         num_workers=2,
     )
     return train_loader, test_loader
+
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
     max_loss = torch.zeros(y.shape[0]).cuda()
@@ -99,6 +107,7 @@ def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
         max_loss = torch.max(max_loss, all_loss)
     return max_delta
 
+
 def evaluate_pgd(test_loader, model, attack_iters, restarts, limit_n=float("inf")):
     epsilon = (8 / 255.) / std
     alpha = (2 / 255.) / std
@@ -118,6 +127,7 @@ def evaluate_pgd(test_loader, model, attack_iters, restarts, limit_n=float("inf"
             if n >= limit_n:
                 break
     return pgd_loss/n, pgd_acc/n
+
 
 def attack_pgd_l2(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
     max_loss = torch.zeros(y.shape[0]).cuda()
@@ -151,6 +161,7 @@ def attack_pgd_l2(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None)
         max_loss = torch.max(max_loss, all_loss)
     return max_delta
 
+
 def evaluate_pgd_l2(test_loader, model, attack_iters, restarts, limit_n=float("inf")):
     epsilon = (36 / 255.) / std
     alpha = epsilon/5.
@@ -171,6 +182,7 @@ def evaluate_pgd_l2(test_loader, model, attack_iters, restarts, limit_n=float("i
                 break
     return pgd_loss/n, pgd_acc/n
 
+
 def evaluate_standard(test_loader, model):
     test_loss = 0
     test_acc = 0
@@ -186,10 +198,11 @@ def evaluate_standard(test_loader, model):
             n += y.size(0)
     return test_loss/n, test_acc/n
 
+
 def ortho_certificates(output, class_indices, L):
     batch_size = output.shape[0]
     batch_indices = torch.arange(batch_size)
-    
+
     onehot = torch.zeros_like(output).cuda()
     onehot[torch.arange(output.shape[0]), class_indices] = 1.
     output_trunc = output - onehot*1e6
@@ -199,14 +212,15 @@ def ortho_certificates(output, class_indices, L):
     output_diff = output_class_indices - output_nextmax
     return output_diff/(math.sqrt(2)*L)
 
+
 def lln_certificates(output, class_indices, last_layer, L):
     batch_size = output.shape[0]
     batch_indices = torch.arange(batch_size)
-    
+
     onehot = torch.zeros_like(output).cuda()
     onehot[batch_indices, class_indices] = 1.
-    output_trunc = output - onehot*1e6    
-        
+    output_trunc = output - onehot*1e6
+
     lln_weight = last_layer.lln_weight
     lln_weight_indices = lln_weight[class_indices, :]
     lln_weight_diff = lln_weight_indices.unsqueeze(1) - lln_weight.unsqueeze(0)
@@ -217,6 +231,7 @@ def lln_certificates(output, class_indices, last_layer, L):
     output_diff = output_class_indices.unsqueeze(1) - output_trunc
     all_certificates = output_diff/(lln_weight_diff_norm*L)
     return torch.min(all_certificates, dim=1)[0]
+
 
 def evaluate_certificates(test_loader, model, L, epsilon=36.):
     losses_list = []
@@ -232,25 +247,21 @@ def evaluate_certificates(test_loader, model, L, epsilon=36.):
             losses_list.append(loss)
 
             output_max, output_amax = torch.max(output, dim=1)
-            
+
             if model.lln:
                 certificates = lln_certificates(output, output_amax, model.last_layer, L)
             else:
                 certificates = ortho_certificates(output, output_amax, L)
-                
-            correct = (output_amax==y)
+
+            correct = (output_amax == y)
             certificates_list.append(certificates)
             correct_list.append(correct)
-            
+
         losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
         certificates_array = torch.cat(certificates_list, dim=0).cpu().numpy()
         correct_array = torch.cat(correct_list, dim=0).cpu().numpy()
     return losses_array, correct_array, certificates_array
 
-
-from cayley_ortho_conv import Cayley, CayleyLinear
-from block_ortho_conv import BCOP
-from skew_ortho_conv import SOC
 
 conv_mapping = {
     'standard': nn.Conv2d,
@@ -259,7 +270,6 @@ conv_mapping = {
     'cayley': Cayley
 }
 
-from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
 
 activation_dict = {
     'relu': F.relu,
@@ -269,6 +279,7 @@ activation_dict = {
     'softplus': F.softplus,
     'maxmin': MaxMin()
 }
+
 
 def activation_mapping(activation_name, channels=None):
     if activation_name == 'hh1':
@@ -280,6 +291,7 @@ def activation_mapping(activation_name, channels=None):
     else:
         activation_func = activation_dict[activation_name]
     return activation_func
+
 
 def parameter_lists(model):
     conv_params = []
