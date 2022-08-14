@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 def get_args():
     parser = argparse.ArgumentParser()
+
+    # isoperimetry arguments
+    parser.add_argument('--n', default=10, type=int)
     
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -81,7 +84,8 @@ def main():
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
-    args.out_dir += '_' + str(args.dataset) 
+    args.out_dir += '_' + str(args.dataset)
+    args.out_dir += '_n=' + str(args.n) 
     args.out_dir += '_' + str(args.block_size) 
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
@@ -142,7 +146,7 @@ def main():
     if args.opt_level == 'O2':
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
-    criterion = nn.CrossEntropyLoss()
+    criterion = isoLossRand(sample_size=args.n)
 
     lr_steps = args.epochs * len(train_loader)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2, 
@@ -193,7 +197,7 @@ def main():
             scheduler.step()
             
         # Check current test accuracy of model
-        losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model, L)
+        losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model, L, sample_size=args.n)
         
         test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
             losses_arr, correct_arr, certificates_arr)
@@ -228,7 +232,7 @@ def main():
     model_test.eval()
         
     start_test_time = time.time()
-    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L)
+    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L, sample_size=args.n)
     total_time = time.time() - start_test_time
     
     test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
@@ -245,7 +249,7 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L)
+    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L, sample_size=args.n)
     total_time = time.time() - start_test_time
     
     test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(

@@ -15,6 +15,33 @@ std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
 
+def isoLossEval(output, n=10, index=None):
+    if index is None:
+        loss = -torch.abs(torch.mean(output[torch.randint(low=0, high=output.size()[0], size=(n, 1))] 
+                                    - output[torch.randint(low=0, high=output.size()[0], size=(n, 1))]))
+    else:
+        loss = -torch.abs(torch.mean(output[index[0]] 
+                                    - output[index[1]]))
+    return loss
+
+class isoLoss(nn.Module):
+    def __init__(self, data_len, sample_size=10):
+        super(isoLoss, self).__init__()
+        self.sample_size = sample_size
+        self.index = [torch.randint(low=0, high=data_len, size=(sample_size, 1)), 
+                        torch.randint(low=0, high=data_len, size=(sample_size, 1))]
+    
+    def forward(self, output, target):
+        return isoLossEval(output, self.sample_size, self.index)
+
+class isoLossRand(nn.Module):
+    def __init__(self, sample_size=10):
+        super(isoLoss, self).__init__()
+        self.sample_size = sample_size
+    
+    def forward(self, output, target):
+        return isoLossEval(output, self.sample_size)
+
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
@@ -217,7 +244,7 @@ def lln_certificates(output, class_indices, last_layer, L):
     all_certificates = output_diff/(lln_weight_diff_norm*L)
     return torch.min(all_certificates, dim=1)[0]
 
-def evaluate_certificates(test_loader, model, L, epsilon=36.):
+def evaluate_certificates(test_loader, model, L, epsilon=36., sample_size=10):
     losses_list = []
     certificates_list = []
     correct_list = []
@@ -227,7 +254,7 @@ def evaluate_certificates(test_loader, model, L, epsilon=36.):
         for i, (X, y) in enumerate(test_loader):
             X, y = X.cuda(), y.cuda()
             output = model(X)
-            loss = F.cross_entropy(output, y, reduction='none')
+            loss = torch.tensor(np.array([isoLossEval(output, y, sample_size).cpu().numpy()]))
             losses_list.append(loss)
 
             output_max, output_amax = torch.max(output, dim=1)
