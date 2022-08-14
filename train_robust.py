@@ -18,8 +18,8 @@ from utils import *
 logger = logging.getLogger(__name__)
 
 
-# TODO: Define our loss
-def eval_loss(data1, data2):
+# [x] TODO: Define our loss
+def iso_loss(data1, data2):
     return -(data1 - data2).mean()  # the loss should be negative since we want to maximize it
 
 
@@ -121,7 +121,7 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    # TODO: change the data loader to return x and x' as a pair rather than returning y
+    # [x] TODO: change the data loader to return x and x' as a pair rather than returning y
     train_loader, test_loader = get_loaders(args.data_dir, args.batch_size, args.dataset)
     std = cifar10_std
     if args.dataset == 'cifar10':
@@ -151,7 +151,7 @@ def main():
     model, opt = amp.initialize(model, opt, **amp_args)
 
     # criterion = nn.CrossEntropyLoss()
-    criterion = eval_loss
+    criterion = iso_loss
 
     lr_steps = args.epochs * len(train_loader)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
@@ -192,7 +192,7 @@ def main():
             # else:
             #     curr_cert = ortho_certificates(output_1, y, L)
 
-            ce_loss = criterion(output_1, output_2)  # TODO change to eval_loss()
+            ce_loss = criterion(output_1, output_2)  # [x] TODO change to iso_loss()
             loss = ce_loss  # - args.gamma * F.relu(curr_cert).mean()
 
             opt.zero_grad()
