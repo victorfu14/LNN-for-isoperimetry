@@ -16,7 +16,7 @@
 #SBATCH --gres=gpu:1
 
 
-#SBATCH --time=3-00:00:00
+#SBATCH --time=1-00:00:00
 
 #SBATCH --account=vvh0
 
@@ -27,7 +27,7 @@ conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train_robust.py --conv-layer soc --block-size 4 --dataset cifar100
+python train_robust.py --conv-layer soc --block-size 4 --dataset cifar10
 
 /bin/hostname
 sleep 60
