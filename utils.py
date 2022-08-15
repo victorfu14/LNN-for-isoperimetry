@@ -36,7 +36,7 @@ class isoLoss(nn.Module):
 
 class isoLossRand(nn.Module):
     def __init__(self, sample_size=10):
-        super(isoLoss, self).__init__()
+        super(isoLossRand, self).__init__()
         self.sample_size = sample_size
     
     def forward(self, output, target):
