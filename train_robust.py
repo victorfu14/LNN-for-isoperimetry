@@ -160,9 +160,13 @@ def main():
     std = torch.tensor(std).cuda()
     L = 1/torch.max(std)
     prev_robust_acc = 0.
+    prev_test_loss = 0.
     start_train_time = time.time()
-    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Train Acc \t Test Loss \t ' + 
-                'Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Test Cert')
+    # logger.info('Epoch \t Seconds \t LR \t Train Loss \t Train Acc \t Test Loss \t ' + 
+    #             'Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Test Cert')
+
+    # only need train and test loss
+    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss \t ')
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
@@ -202,18 +206,25 @@ def main():
         test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
             losses_arr, correct_arr, certificates_arr)
         
-        robust_acc = test_robust_acc_list[0]
-        if (robust_acc >= prev_robust_acc):
-            torch.save(model.state_dict(), best_model_path)
-            prev_robust_acc = robust_acc
-            best_epoch = epoch
+        # robust_acc = test_robust_acc_list[0]
+        # if (robust_acc >= prev_robust_acc):
+        #     torch.save(model.state_dict(), best_model_path)
+        #     prev_robust_acc = robust_acc
+        #     best_epoch = epoch
         
+        if (test_loss <= prev_test_loss):
+            torch.save(model.state_dict(), best_model_path)
+            prev_test_loss = test_loss
+            best_epoch = epoch
+
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
-        logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f',
-            epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, train_acc/train_n, 
-            test_loss, test_acc, test_robust_acc_list[0], test_robust_acc_list[1], 
-            test_robust_acc_list[2], test_cert)
+        # logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f',
+        #     epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, train_acc/train_n, 
+        #     test_loss, test_acc, test_robust_acc_list[0], test_robust_acc_list[1], 
+        #     test_robust_acc_list[2], test_cert)
+        logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
+        epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss)
         
         torch.save(model.state_dict(), last_model_path)
         
@@ -238,10 +249,14 @@ def main():
     test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
         losses_arr, correct_arr, certificates_arr)
     
-    logger.info('Best Epoch \t Test Loss \t Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Mean Cert \t Test Time')
-    logger.info('%d \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f', best_epoch, test_loss, test_acc,
-                                                        test_robust_acc_list[0], test_robust_acc_list[1], 
-                                                        test_robust_acc_list[2], test_cert, total_time)
+    # logger.info('Best Epoch \t Test Loss \t Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Mean Cert \t Test Time')
+    # logger.info('%d \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f', best_epoch, test_loss, test_acc,
+    #                                                     test_robust_acc_list[0], test_robust_acc_list[1], 
+    #                                                     test_robust_acc_list[2], test_cert, total_time)
+
+    # only care about "test_loss" in isoperimetry
+    logger.info('Best Epoch \t Test Loss \t Test Time')
+    logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
 
     # Evaluation at last model
     model_test.load_state_dict(torch.load(last_model_path))

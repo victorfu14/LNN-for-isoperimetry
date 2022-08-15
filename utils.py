@@ -254,7 +254,7 @@ def evaluate_certificates(test_loader, model, L, epsilon=36., sample_size=10):
         for i, (X, y) in enumerate(test_loader):
             X, y = X.cuda(), y.cuda()
             output = model(X)
-            loss = torch.tensor(np.array([isoLossEval(output, y, sample_size).cpu().numpy()]))
+            loss = torch.tensor(np.array([isoLossEval(output, n=sample_size).cpu().numpy()]))
             losses_list.append(loss)
 
             output_max, output_amax = torch.max(output, dim=1)
