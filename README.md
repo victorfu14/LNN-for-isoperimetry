@@ -2,8 +2,8 @@
 
 + **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions.
 + **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
-+ **Certificate Regularization (CR)** leads to significantly improved robustness certificates.
-+ **Householder Activations (HH)** improve the performance for deeper networks.
++ **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
++ **Householder Activations (HH)** improve the performance of deeper networks.
 
 ## Prerequisites
 
@@ -13,6 +13,12 @@
 + einops. Can be installed using ```pip install einops```
 + NVIDIA Apex. Can be installed using ```conda install -c conda-forge nvidia-apex```
 + A recent NVIDIA GPU
+
+> On GreatLakes, you need to manually download the datasets... `requests` doesn't really work.
+
+## TODO
+
++ [ ] 🎨 Draw a line plot
 
 ## How to train 1-Lipschitz Convnets?
 
@@ -32,17 +38,6 @@
 + CONV: bcop, cayley, soc (Use ```standard``` to train using standard convolution)
 + MODEL: resnet18, resnet34, resnet50, resnet101, resnet152
 + DATASET: cifar10, cifar100
-
-## Demonstration of Skew Orthogonal Convolutions
-
-![demo](./figures/SOC_demo.png)
-
-## Demonstration of Householder Activations
-
-+ Illustration of the hh1 activation function
-![demo](./figures/hh1_demo.png)
-+ Illustration of the hh2 activation function (right)
-![demo](./figures/hh2_demo.png)
 
 ## Citations
 
