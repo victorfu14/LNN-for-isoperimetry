@@ -28,7 +28,6 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--n', default=10, type=int, help='n for number of samples training on')
-    parser.add_argument('--n-eval', default=10000, type=int, help='n for number of samples testing on.')
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -37,7 +36,6 @@ def get_args():
     parser.add_argument('--lr-max', default=0.1, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--gamma', default=0., type=float, help='gamma for certificate regularization')
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
                         help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
     parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
@@ -126,7 +124,7 @@ def main():
     #     raise Exception('Unknown dataset')
 
     args.num_classes = 1
-    
+
     # Evaluation at early stopping
     model = init_model(args).cuda()
     model.train()
@@ -195,18 +193,18 @@ def main():
             scheduler.step()
 
         # Check current test accuracy of model
-        test_loss = evaluate_certificates(
-            test_loader_1, test_loader_2, model, criterion)
+        # test_loss = evaluate_certificates(
+        #     test_loader_1, test_loader_2, model, criterion)
 
-        if (test_loss <= prev_test_loss):
-            torch.save(model.state_dict(), best_model_path)
-            prev_test_loss = test_loss
-            best_epoch = epoch
+        # if (test_loss <= prev_test_loss):
+        #     torch.save(model.state_dict(), best_model_path)
+        #     prev_test_loss = test_loss
+        #     best_epoch = epoch
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
-        logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss)
+        logger.info('%d \t %.1f \t %.4f \t %.4f ',
+                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
 
         torch.save(model.state_dict(), last_model_path)
 

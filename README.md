@@ -37,6 +37,7 @@
 1. Given $X, X^\prime$, the loss is defined as $L(X, X^\prime)\coloneqq - \frac{1}{N} \sum_{i=1}^{N} (f(x_i) - f(x^\prime_i))$
 2. When reporting the loss when testing samples $X^{\prime \prime}, X^{\prime\prime\prime}$, we don't care about the sign, hence we report $\left\vert L(X^{\prime\prime}, X^{\prime\prime\prime}) \right\vert$.
 3. Change the number of classes to $1$ since we only want to consider $\mathcal{F}$ such that $f\colon R^d \to [-1, 1]$. (not sure how to enforce the last layer to be in $[-1, 1]$)
+4. Don't need data augmentation.
 
 ## Citations
 

@@ -38,7 +38,7 @@ def main():
             if f[-3:] == '.py' or f[-3:] == '.sh':
                 copyfile(src, dst)
 
-    output = str(args.n) + '_on_' + str(args.n_eval) + '.log'
+    output = 'eval.log'
     logfile = os.path.join(args.out_dir, output)
     if os.path.exists(logfile):
         os.remove(logfile)
@@ -53,54 +53,54 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    assert args.n <= 60000/4 and args.n_eval in [10000, 8000, 6000,
-                                                 4000, 2000, 1000, 500, 100]  # Make sure that n is not too large
+    assert args.n <= 60000/4  # Make sure that n is not too large
 
-    train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
-        args.data_dir, args.batch_size, args.n, args.dataset, eval=True, n_eval=args.n_eval)
+    for n_eval in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]:
+        train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
+            args.data_dir, args.batch_size, args.n, args.dataset, eval=True, n_eval=n_eval)
 
-    if args.dataset == 'cifar10':
-        args.num_classes = 10
-    elif args.dataset == 'cifar100':
-        args.num_classes = 100
-    else:
-        raise Exception('Unknown dataset')
+        if args.dataset == 'cifar10':
+            args.num_classes = 10
+        elif args.dataset == 'cifar100':
+            args.num_classes = 100
+        else:
+            raise Exception('Unknown dataset')
 
-    criterion = iso_loss
+        criterion = iso_loss
 
-    best_model_path = os.path.join(args.out_dir, 'best.pth')
-    last_model_path = os.path.join(args.out_dir, 'last.pth')
+        best_model_path = os.path.join(args.out_dir, 'best.pth')
+        last_model_path = os.path.join(args.out_dir, 'last.pth')
 
-    logger.info('Model \t Train Loss \t Test Loss \t Test Time')
+        logger.info('Model \t n \t Train Loss \t Test Loss \t Test Time')
 
-    # Evaluation at best model
-    model = init_model(args).cuda()
-    model.load_state_dict(torch.load(best_model_path))
-    model.float()
-    model.eval()
+        # Evaluation at best model
+        model = init_model(args).cuda()
+        model.load_state_dict(torch.load(best_model_path))
+        model.float()
+        model.eval()
 
-    start_test_time = time.time()
-    train_loss = torch.abs(evaluate_certificates(
-        train_loader_1, train_loader_2, model, criterion, eval=True))
-    test_loss = torch.abs(evaluate_certificates(
-        test_loader_1, test_loader_2, model, criterion, eval=True))
-    total_time = time.time() - start_test_time
+        start_test_time = time.time()
+        train_loss = torch.abs(evaluate_certificates(
+            train_loader_1, train_loader_2, model, criterion, eval=True))
+        test_loss = torch.abs(evaluate_certificates(
+            test_loader_1, test_loader_2, model, criterion, eval=True))
+        total_time = time.time() - start_test_time
 
-    logger.info('%s \t %.4f \t %.4f \t %.4f', 'Best', train_loss, test_loss, total_time)
+        logger.info('%s \t %d \t %.4f \t %.4f \t %.4f', 'Best', n_eval, train_loss, test_loss, total_time)
 
-    # Evaluation at last model
-    model.load_state_dict(torch.load(last_model_path))
-    model.float()
-    model.eval()
+        # Evaluation at last model
+        model.load_state_dict(torch.load(last_model_path))
+        model.float()
+        model.eval()
 
-    start_test_time = time.time()
-    train_loss = torch.abs(evaluate_certificates(
-        train_loader_1, train_loader_2, model, criterion, eval=True))
-    test_loss = torch.abs(evaluate_certificates(
-        test_loader_1, test_loader_2, model, criterion, eval=True))
-    total_time = time.time() - start_test_time
+        start_test_time = time.time()
+        train_loss = torch.abs(evaluate_certificates(
+            train_loader_1, train_loader_2, model, criterion, eval=True))
+        test_loss = torch.abs(evaluate_certificates(
+            test_loader_1, test_loader_2, model, criterion, eval=True))
+        total_time = time.time() - start_test_time
 
-    logger.info('%s \t %.4f \t %.4f \t %.4f', 'Last', train_loss, test_loss, total_time)
+        logger.info('%s \t %d \t %.4f \t %.4f \t %.4f', 'Last', n_eval, train_loss, test_loss, total_time)
 
 
 if __name__ == "__main__":
