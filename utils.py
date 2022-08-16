@@ -28,7 +28,11 @@ def clamp(X, lower_limit, upper_limit):
 
 def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eval=False, n_eval=10000):
     if eval:
-        batch_size = n_eval
+        train_batch_size = n
+        test_batch_size = n_eval
+    else:
+        train_batch_size = batch_size
+        test_batch_size = batch_size
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
     elif dataset_name == 'cifar100':
@@ -36,8 +40,6 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eva
 
     if normalize:
         train_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(cifar10_mean, cifar10_std),
         ])
@@ -47,8 +49,6 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eva
         ])
     else:
         train_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
         test_transform = transforms.Compose([
@@ -66,14 +66,14 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eva
 
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_dataset_1,
-        batch_size=batch_size,
+        batch_size=train_batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=num_workers,
     )
     train_loader_2 = torch.utils.data.DataLoader(
         dataset=train_dataset_2,
-        batch_size=batch_size,
+        batch_size=train_batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=num_workers,
@@ -81,14 +81,14 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eva
 
     test_loader_1 = torch.utils.data.DataLoader(
         dataset=test_dataset_1,
-        batch_size=batch_size,
+        batch_size=test_batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=2,
     )
     test_loader_2 = torch.utils.data.DataLoader(
         dataset=test_dataset_2,
-        batch_size=batch_size,
+        batch_size=test_batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=2,

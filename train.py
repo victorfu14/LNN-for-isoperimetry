@@ -36,6 +36,7 @@ def get_args():
     parser.add_argument('--lr-max', default=0.1, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--gamma', default=0., type=float, help='gamma for certificate regularization')
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
                         help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
     parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
@@ -110,7 +111,7 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    assert args.n <= 60000/4  # Make sure that n is not too large
+    assert args.n in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]  # Make sure that n is not too large
 
     train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
         args.data_dir, args.batch_size, args.n, args.dataset)
