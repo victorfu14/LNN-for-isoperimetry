@@ -33,6 +33,7 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eva
     else:
         train_batch_size = batch_size
         test_batch_size = batch_size
+
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
     elif dataset_name == 'cifar100':

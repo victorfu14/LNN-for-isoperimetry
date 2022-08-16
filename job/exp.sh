@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=iso-exp
+#SBATCH --job-name=iso-l2
 
 #SBATCH --mail-user=pbb@umich.edu
 
@@ -27,25 +27,11 @@ conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 10000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 8000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 6000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 4000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 2000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 1000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 500
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --n-eval 100
+python train.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --l l2
+python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 10000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 8000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 6000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 4000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 2000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 1000
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 500
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --n-eval 100
+python train.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --l l2
+python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000
 
 /bin/hostname
 sleep 60

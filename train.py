@@ -18,9 +18,13 @@ from utils import *
 logger = logging.getLogger(__name__)
 
 
-# [x] TODO: Define our loss
-def iso_loss(data1, data2):
+def iso_l1_loss(data1, data2):
     return -(data1 - data2).mean()  # the loss sign shouldn't matter since either is ok. (x, x' are just symbols)
+
+
+def iso_l2_loss(data1, data2):
+    # the loss sign shouldn't matter since either is ok. (x, x' are just symbols)
+    return (data1 - data2).mean().square()
 
 
 def get_args():
@@ -28,6 +32,7 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--n', default=10, type=int, help='n for number of samples training on')
+    parser.add_argument('--l', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -78,6 +83,7 @@ def main():
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     args.out_dir += '_' + str(args.dataset)
+    args.out_dir += '_' + str(args.l)
     args.out_dir += '_n=' + str(args.n)
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.conv_layer)
@@ -144,7 +150,11 @@ def main():
     if args.opt_level == 'O2':
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
-    criterion = iso_loss
+
+    if args.l == 'l1':
+        criterion = iso_l1_loss
+    else:
+        criterion = iso_l2_loss
 
     lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
@@ -161,7 +171,7 @@ def main():
     start_train_time = time.time()
 
     # only need train and test loss
-    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss \t ')
+    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss')
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
@@ -194,18 +204,18 @@ def main():
             scheduler.step()
 
         # Check current test accuracy of model
-        # test_loss = evaluate_certificates(
-        #     test_loader_1, test_loader_2, model, criterion)
+        test_loss = evaluate_certificates(
+            test_loader_1, test_loader_2, model, criterion)
 
-        # if (test_loss <= prev_test_loss):
-        #     torch.save(model.state_dict(), best_model_path)
-        #     prev_test_loss = test_loss
-        #     best_epoch = epoch
+        if (test_loss <= prev_test_loss):
+            torch.save(model.state_dict(), best_model_path)
+            prev_test_loss = test_loss
+            best_epoch = epoch
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
         logger.info('%d \t %.1f \t %.4f \t %.4f ',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
+                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss/train_n)
 
         torch.save(model.state_dict(), last_model_path)
 

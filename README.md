@@ -20,6 +20,8 @@
 
 + [ ] 🎨 Draw a line plot
 + [ ] 🧪 Run the 10k CIFAR10 model on different n
++ [ ] 🧪 Use Square Root loss
++ [ ] 🧪 Use Gaussian data as a sanity check.
 
 ## How to train 1-Lipschitz Convnets?
 
