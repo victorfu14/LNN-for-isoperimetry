@@ -21,7 +21,9 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     # isoperimetry arguments
-    parser.add_argument('--n', default=10, type=int)
+    parser.add_argument('--sample-size', default=1000, type=int)
+    parser.add_argument('--val-size', default=1000, type=int)
+    # parser.add_argument('--test-size', default=1000, type=int)
     
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -65,19 +67,6 @@ def init_model(args):
                        lln=args.lln)
     return model
 
-def robust_statistics(losses_arr, correct_arr, certificates_arr, 
-                      epsilon_list=[36., 72., 108., 144., 180., 216.]):
-    mean_loss = np.mean(losses_arr)
-    mean_acc = np.mean(correct_arr)
-    mean_certs = (certificates_arr * correct_arr).sum()/correct_arr.sum()
-    
-    robust_acc_list = []
-    for epsilon in epsilon_list:
-        robust_correct_arr = (certificates_arr > (epsilon/255.)) & correct_arr
-        robust_acc = robust_correct_arr.sum()/robust_correct_arr.shape[0]
-        robust_acc_list.append(robust_acc)
-    return mean_loss, mean_acc, mean_certs, robust_acc_list
-
 def main():
     args = get_args()
     
@@ -85,7 +74,7 @@ def main():
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     args.out_dir += '_' + str(args.dataset)
-    args.out_dir += '_n=' + str(args.n) 
+    args.out_dir += '_n=' + str(args.sample_size)
     args.out_dir += '_' + str(args.block_size) 
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
@@ -119,14 +108,9 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader, test_loader = get_loaders(args.data_dir, args.batch_size, args.dataset)
+    train_loader_1, train_loader_2, val_loader, test_loader = get_loaders(args.data_dir, args.batch_size, args.dataset, args.sample_size, args.val_size)
     std = cifar10_std
-    if args.dataset == 'cifar10':
-        args.num_classes = 10    
-    elif args.dataset == 'cifar100':
-        args.num_classes = 100
-    else:
-        raise Exception('Unknown dataset')
+    args.num_classes = 1
 
     # Evaluation at early stopping
     model = init_model(args).cuda()
@@ -146,9 +130,11 @@ def main():
     if args.opt_level == 'O2':
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
-    criterion = isoLossRand(sample_size=args.n)
+    criterion = isoLoss()
 
-    lr_steps = args.epochs * len(train_loader)
+    val_sample = np.split(np.random.shuffle(np.arange(args.val_size * 2), 2))
+
+    lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2, 
         (3 * lr_steps) // 4], gamma=0.1)
     
@@ -159,11 +145,8 @@ def main():
     # Training
     std = torch.tensor(std).cuda()
     L = 1/torch.max(std)
-    prev_robust_acc = 0.
-    prev_test_loss = 0.
+    prev_val_loss = 0.
     start_train_time = time.time()
-    # logger.info('Epoch \t Seconds \t LR \t Train Loss \t Train Acc \t Test Loss \t ' + 
-    #             'Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Test Cert')
 
     # only need train and test loss
     logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss \t ')
@@ -171,60 +154,36 @@ def main():
         model.train()
         start_epoch_time = time.time()
         train_loss = 0
-        train_cert = 0
-        train_robust = 0
-        train_acc = 0
-        train_n = 0
-        for i, (X, y) in enumerate(train_loader):
-            X, y = X.cuda(), y.cuda()
-            
-            output = model(X)
-            curr_correct = (output.max(1)[1] == y)
-            if args.lln:
-                curr_cert = lln_certificates(output, y, model.last_layer, L)
-            else:
-                curr_cert = ortho_certificates(output, y, L)
-                
-            ce_loss = criterion(output, y)
-            loss = ce_loss - args.gamma * F.relu(curr_cert).mean()
+        for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
+            X_1 = X_1.cuda()
+            X_2 = X_2.cuda()
+
+            output1, output2 = model(X_1), model(X_2)
+        
+            ce_loss = criterion(output1, output2)
+            loss = ce_loss
 
             opt.zero_grad()
             with amp.scale_loss(loss, opt) as scaled_loss:
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += ce_loss.item() * y.size(0)
-            train_cert += (curr_cert * curr_correct).sum().item()
-            train_robust += ((curr_cert > (args.epsilon/255.)) * curr_correct).sum().item()
-            train_acc += curr_correct.sum().item()
-            train_n += y.size(0)
+            train_loss += ce_loss
             scheduler.step()
             
-        # Check current test accuracy of model
-        losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model, L, sample_size=args.n)
+        # Check current model
+        losses_arr = evaluate(val_loader, model, val_sample)
+        val_loss = np.mean(losses_arr)
         
-        test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
-            losses_arr, correct_arr, certificates_arr)
-        
-        # robust_acc = test_robust_acc_list[0]
-        # if (robust_acc >= prev_robust_acc):
-        #     torch.save(model.state_dict(), best_model_path)
-        #     prev_robust_acc = robust_acc
-        #     best_epoch = epoch
-        
-        if (test_loss <= prev_test_loss):
+        if (val_loss <= prev_val_loss):
             torch.save(model.state_dict(), best_model_path)
-            prev_test_loss = test_loss
+            prev_val_loss = val_loss
             best_epoch = epoch
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
-        # logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f',
-        #     epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, train_acc/train_n, 
-        #     test_loss, test_acc, test_robust_acc_list[0], test_robust_acc_list[1], 
-        #     test_robust_acc_list[2], test_cert)
         logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
-        epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss)
+        epoch, epoch_time - start_epoch_time, lr, train_loss, test_loss)
         
         torch.save(model.state_dict(), last_model_path)
         
@@ -235,45 +194,37 @@ def main():
 
     logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
     
-    
-    # Evaluation at best model (early stopping)
-    model_test = init_model(args).cuda()
-    model_test.load_state_dict(torch.load(best_model_path))
-    model_test.float()
-    model_test.eval()
+    test_sample = np.split(np.arange(args.test_size), 2)
+    for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
+        logger.info('Test sample size = %d', test_size)
+        test_sample = np.split(np.random.choice(len(test_loader), size=test_size), 2)
+        # Evaluation at best model (early stopping)
+        model_test = init_model(args).cuda()
+        model_test.load_state_dict(torch.load(best_model_path))
+        model_test.float()
+        model_test.eval()
+            
+        start_test_time = time.time()
+        losses_arr = evaluate(test_loader, model_test, test_sample)
+        total_time = time.time() - start_test_time
+        test_loss = np.mean(losses_arr)
         
-    start_test_time = time.time()
-    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L, sample_size=args.n)
-    total_time = time.time() - start_test_time
-    
-    test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
-        losses_arr, correct_arr, certificates_arr)
-    
-    # logger.info('Best Epoch \t Test Loss \t Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Mean Cert \t Test Time')
-    # logger.info('%d \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f', best_epoch, test_loss, test_acc,
-    #                                                     test_robust_acc_list[0], test_robust_acc_list[1], 
-    #                                                     test_robust_acc_list[2], test_cert, total_time)
+        # only care about "test_loss" in isoperimetry
+        logger.info('Best Epoch \t Test Loss \t Test Time')
+        logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
 
-    # only care about "test_loss" in isoperimetry
-    logger.info('Best Epoch \t Test Loss \t Test Time')
-    logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
+        # Evaluation at last model
+        model_test.load_state_dict(torch.load(last_model_path))
+        model_test.float()
+        model_test.eval()
 
-    # Evaluation at last model
-    model_test.load_state_dict(torch.load(last_model_path))
-    model_test.float()
-    model_test.eval()
-
-    start_test_time = time.time()
-    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L, sample_size=args.n)
-    total_time = time.time() - start_test_time
-    
-    test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
-        losses_arr, correct_arr, certificates_arr)
-    
-    logger.info('Last Epoch \t Test Loss \t Test Acc \t Test Robust (36) \t Test Robust (72) \t Test Robust (108) \t Mean Cert \t Test Time')
-    logger.info('%d \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f', epoch, test_loss, test_acc,
-                                                        test_robust_acc_list[0], test_robust_acc_list[1], 
-                                                        test_robust_acc_list[2], test_cert, total_time)
+        start_test_time = time.time()
+        losses_arr = evaluate(test_loader, model_test, test_sample)
+        total_time = time.time() - start_test_time
+        test_loss = np.mean(losses_arr)
+        
+        logger.info('Last Epoch \t Test Loss \t Test Time')
+        logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
 
 if __name__ == "__main__":
     main()
