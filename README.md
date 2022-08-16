@@ -32,13 +32,11 @@
 + Use ```--lln``` to enable last layer normalization
 + DATASET: cifar10/cifar100.
 
-## How to train Standard Convnets using Orthogonal Convolutions?
+## Note
 
-```python train_standard.py --conv-layer CONV --model-name MODEL --dataset DATASET```
-
-+ CONV: bcop, cayley, soc (Use ```standard``` to train using standard convolution)
-+ MODEL: resnet18, resnet34, resnet50, resnet101, resnet152
-+ DATASET: cifar10, cifar100
+1. Given $X, X^\prime$, the loss is defined as $L(X, X^\prime)\coloneqq - \frac{1}{N} \sum_{i=1}^{N} (f(x_i) - f(x^\prime_i))$
+2. When reporting the loss when testing samples $X^{\prime \prime}, X^{\prime\prime\prime}$, we don't care about the sign, hence we report $\left\vert L(X^{\prime\prime}, X^{\prime\prime\prime}) \right\vert$.
+3. Change the number of classes to $1$ since we only want to consider $\mathcal{F}$ such that $f\colon R^d \to [-1, 1]$. (not sure how to enforce the last layer to be in $[-1, 1]$)
 
 ## Citations
 

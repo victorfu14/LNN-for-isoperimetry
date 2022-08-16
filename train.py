@@ -118,13 +118,15 @@ def main():
         args.data_dir, args.batch_size, args.n, args.dataset)
 
     std = cifar10_std
-    if args.dataset == 'cifar10':
-        args.num_classes = 10
-    elif args.dataset == 'cifar100':
-        args.num_classes = 100
-    else:
-        raise Exception('Unknown dataset')
+    # if args.dataset == 'cifar10':
+    #     args.num_classes = 10
+    # elif args.dataset == 'cifar100':
+    #     args.num_classes = 100
+    # else:
+    #     raise Exception('Unknown dataset')
 
+    args.num_classes = 1
+    
     # Evaluation at early stopping
     model = init_model(args).cuda()
     model.train()

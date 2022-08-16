@@ -27,6 +27,8 @@ def clamp(X, lower_limit, upper_limit):
 
 
 def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eval=False, n_eval=10000):
+    if eval:
+        batch_size = n_eval
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
     elif dataset_name == 'cifar100':
@@ -77,36 +79,20 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eva
         num_workers=num_workers,
     )
 
-    if eval:
-        test_loader_1 = torch.utils.data.DataLoader(
-            dataset=test_dataset_1,
-            batch_size=n_eval,
-            shuffle=True,
-            pin_memory=True,
-            num_workers=2,
-        )
-        test_loader_2 = torch.utils.data.DataLoader(
-            dataset=test_dataset_2,
-            batch_size=n_eval,
-            shuffle=True,
-            pin_memory=True,
-            num_workers=2,
-        )
-    else:
-        test_loader_1 = torch.utils.data.DataLoader(
-            dataset=test_dataset_1,
-            batch_size=batch_size,
-            shuffle=True,
-            pin_memory=True,
-            num_workers=2,
-        )
-        test_loader_2 = torch.utils.data.DataLoader(
-            dataset=test_dataset_2,
-            batch_size=batch_size,
-            shuffle=True,
-            pin_memory=True,
-            num_workers=2,
-        )
+    test_loader_1 = torch.utils.data.DataLoader(
+        dataset=test_dataset_1,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
+    test_loader_2 = torch.utils.data.DataLoader(
+        dataset=test_dataset_2,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
     return train_loader_1, train_loader_2, test_loader_1, test_loader_2
 
 
