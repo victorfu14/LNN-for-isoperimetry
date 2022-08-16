@@ -22,7 +22,7 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--sample-size', default=1000, type=int)
-    parser.add_argument('--val-size', default=1000, type=int)
+    parser.add_argument('--val-size', default=100, type=int)
     # parser.add_argument('--test-size', default=1000, type=int)
     
     # Training specifications
@@ -74,7 +74,8 @@ def main():
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     args.out_dir += '_' + str(args.dataset)
-    args.out_dir += '_n=' + str(args.sample_size)
+    args.out_dir += '_train_size=' + str(args.sample_size)
+    args.out_dir += '_val_size=' + str(args.val_size)
     args.out_dir += '_' + str(args.block_size) 
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
@@ -109,7 +110,9 @@ def main():
     torch.cuda.manual_seed(args.seed)
 
     train_loader_1, train_loader_2, val_loader, test_loader = get_loaders(args.data_dir, args.batch_size, args.dataset, args.sample_size, args.val_size)
-    std = cifar10_std
+    std = cifar10_std if args.dataset == "cifar10" else cifar100_std
+
+    # Only need R^d -> R lipschitz functions
     args.num_classes = 1
 
     # Evaluation at early stopping
@@ -132,7 +135,9 @@ def main():
     model, opt = amp.initialize(model, opt, **amp_args)
     criterion = isoLoss()
 
-    val_sample = np.split(np.random.shuffle(np.arange(args.val_size * 2), 2))
+    arr = np.arange(args.val_size * 2)
+    np.random.shuffle(arr)
+    val_sample = np.split(arr, 2)
 
     lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2, 
@@ -148,15 +153,16 @@ def main():
     prev_val_loss = 0.
     start_train_time = time.time()
 
-    # only need train and test loss
-    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss \t ')
+    # Logging train and validation loss
+    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Val Loss \t ')
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
         train_loss = 0
+        train_n = 0
         for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            X_1 = X_1.cuda()
-            X_2 = X_2.cuda()
+            X_1, X_2 = X_1[0], X_2[0]
+            X_1, X_2 = X_1.cuda(), X_2.cuda()
 
             output1, output2 = model(X_1), model(X_2)
         
@@ -168,10 +174,11 @@ def main():
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += ce_loss
+            train_loss += -torch.sqrt(-ce_loss)
+            train_n += 1
             scheduler.step()
             
-        # Check current model
+        # Check current model on validation set
         losses_arr = evaluate(val_loader, model, val_sample)
         val_loss = np.mean(losses_arr)
         
@@ -183,7 +190,7 @@ def main():
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
         logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
-        epoch, epoch_time - start_epoch_time, lr, train_loss, test_loss)
+        epoch, epoch_time - start_epoch_time, lr, - (train_loss / train_n) ** 2, val_loss)
         
         torch.save(model.state_dict(), last_model_path)
         
@@ -194,10 +201,11 @@ def main():
 
     logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
     
-    test_sample = np.split(np.arange(args.test_size), 2)
+    # Evaluate on different test sample sizes
     for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
         logger.info('Test sample size = %d', test_size)
-        test_sample = np.split(np.random.choice(len(test_loader), size=test_size), 2)
+        test_sample = np.split(np.arange(test_size), 2)
+        test_sample = np.split(np.random.choice(len(test_loader), size=test_size*2, replace=False), 2)
         # Evaluation at best model (early stopping)
         model_test = init_model(args).cuda()
         model_test.load_state_dict(torch.load(best_model_path))
@@ -209,7 +217,7 @@ def main():
         total_time = time.time() - start_test_time
         test_loss = np.mean(losses_arr)
         
-        # only care about "test_loss" in isoperimetry
+        # Log isoperimetric test loss
         logger.info('Best Epoch \t Test Loss \t Test Time')
         logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
 
