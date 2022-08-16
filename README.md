@@ -19,6 +19,7 @@
 ## TODO
 
 + [ ] 🎨 Draw a line plot
++ [ ] 🧪 Run the 10k CIFAR10 model on different n
 
 ## How to train 1-Lipschitz Convnets?
 
