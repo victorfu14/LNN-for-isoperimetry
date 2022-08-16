@@ -23,7 +23,7 @@ lower_limit = ((0 - mu) / std)
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-# [x]: Divide X into X' and X', and test set as X'' and X'''
+# [ ] Generate Gaussian Data
 
 
 def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eval=False, n_eval=10000):

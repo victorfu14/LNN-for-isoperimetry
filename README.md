@@ -20,7 +20,7 @@
 
 + [ ] 🎨 Draw a line plot
 + [ ] 🧪 Implement Validation set partition
-+ [ ] 🧪 Use Square Root loss
++ [x] 🧪 Use Square Root loss
 + [ ] 🧪 Use Gaussian data as a sanity check.
 
 ## How to train 1-Lipschitz Convnets?

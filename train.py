@@ -23,8 +23,7 @@ def iso_l1_loss(data1, data2):
 
 
 def iso_l2_loss(data1, data2):
-    # the loss sign shouldn't matter since either is ok. (x, x' are just symbols)
-    return (data1 - data2).mean().square()
+    return -(data1 - data2).mean().square()
 
 
 def get_args():
@@ -214,7 +213,7 @@ def main():
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
-        logger.info('%d \t %.1f \t %.4f \t %.4f ',
+        logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss/train_n)
 
         torch.save(model.state_dict(), last_model_path)
