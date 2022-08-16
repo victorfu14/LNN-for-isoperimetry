@@ -23,10 +23,10 @@ lower_limit = ((0 - mu) / std)
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-
 # [x]: Divide X into X' and X', and test set as X'' and X'''
 
-def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True):
+
+def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, eval=False, n_eval=10000):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
     elif dataset_name == 'cifar100':
@@ -76,20 +76,37 @@ def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True):
         pin_memory=True,
         num_workers=num_workers,
     )
-    test_loader_1 = torch.utils.data.DataLoader(
-        dataset=test_dataset_1,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=2,
-    )
-    test_loader_2 = torch.utils.data.DataLoader(
-        dataset=test_dataset_2,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=2,
-    )
+
+    if eval:
+        test_loader_1 = torch.utils.data.DataLoader(
+            dataset=test_dataset_1,
+            batch_size=n_eval,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        test_loader_2 = torch.utils.data.DataLoader(
+            dataset=test_dataset_2,
+            batch_size=n_eval,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+    else:
+        test_loader_1 = torch.utils.data.DataLoader(
+            dataset=test_dataset_1,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        test_loader_2 = torch.utils.data.DataLoader(
+            dataset=test_dataset_2,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
     return train_loader_1, train_loader_2, test_loader_1, test_loader_2
 
 
@@ -251,7 +268,7 @@ def lln_certificates(output, class_indices, last_layer, L):
     return torch.min(all_certificates, dim=1)[0]
 
 
-def evaluate_certificates(test_loader_1, test_loader_2, model, L, criterion, epsilon=36.):
+def evaluate_certificates(test_loader_1, test_loader_2, model, criterion, eval=False):
     losses_list = []
     model.eval()
 
@@ -262,6 +279,8 @@ def evaluate_certificates(test_loader_1, test_loader_2, model, L, criterion, eps
             output_1, output_2 = model(X_1), model(X_2)
             loss = criterion(output_1, output_2)
             losses_list.append(loss)
+            if eval:
+                break
 
         losses_array = torch.stack(losses_list).cpu().numpy()
     return np.mean(losses_array)

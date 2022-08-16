@@ -20,14 +20,15 @@ logger = logging.getLogger(__name__)
 
 # [x] TODO: Define our loss
 def iso_loss(data1, data2):
-    return - torch.abs((data1 - data2).mean())  # the loss should be negative since we want to maximize it
+    return -(data1 - data2).mean()  # the loss sign shouldn't matter since either is ok. (x, x' are just symbols)
 
 
 def get_args():
     parser = argparse.ArgumentParser()
 
     # isoperimetry arguments
-    parser.add_argument('--n', default=10, type=int)
+    parser.add_argument('--n', default=10, type=int, help='n for number of samples training on')
+    parser.add_argument('--n-eval', default=10000, type=int, help='n for number of samples testing on.')
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -154,7 +155,7 @@ def main():
 
     # Training
     std = torch.tensor(std).cuda()
-    L = 1/torch.max(std)
+    # L = 1/torch.max(std)
     prev_test_loss = 0.
     start_train_time = time.time()
 
@@ -193,7 +194,7 @@ def main():
 
         # Check current test accuracy of model
         test_loss = evaluate_certificates(
-            test_loader_1, test_loader_2, model, L, criterion)
+            test_loader_1, test_loader_2, model, criterion)
 
         if (test_loss <= prev_test_loss):
             torch.save(model.state_dict(), best_model_path)
@@ -222,7 +223,7 @@ def main():
 
     start_test_time = time.time()
     test_loss = evaluate_certificates(
-        test_loader_1, test_loader_2, model, L, criterion)
+        test_loader_1, test_loader_2, model_test, criterion)
     total_time = time.time() - start_test_time
 
     logger.info('Best Epoch \t Test Loss \t Test Time')
@@ -235,7 +236,7 @@ def main():
 
     start_test_time = time.time()
     test_loss = evaluate_certificates(
-        test_loader_1, test_loader_2, model, L, criterion)
+        test_loader_1, test_loader_2, model_test, criterion)
     total_time = time.time() - start_test_time
 
     logger.info('Last Epoch \t Test Loss \t Test Time')
