@@ -19,7 +19,7 @@
 ## TODO
 
 + [ ] 🎨 Draw a line plot
-+ [ ] 🧪 Run the 10k CIFAR10 model on different n
++ [ ] 🧪 Implement Validation set partition
 + [ ] 🧪 Use Square Root loss
 + [ ] 🧪 Use Gaussian data as a sanity check.
 
