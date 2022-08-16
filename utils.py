@@ -23,10 +23,15 @@ lower_limit = ((0 - mu) / std)
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-# TODO: Redefine the dataloader
 
+# [x]: Divide X into X' and X', and test set as X'' and X'''
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True):
+def get_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True):
+    if dataset_name == 'cifar10':
+        dataset_func = datasets.CIFAR10
+    elif dataset_name == 'cifar100':
+        dataset_func = datasets.CIFAR100
+
     if normalize:
         train_transform = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
@@ -49,30 +54,43 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True):
         ])
 
     num_workers = 4
-    if dataset_name == 'cifar10':
-        dataset_func = datasets.CIFAR10
-    elif dataset_name == 'cifar100':
-        dataset_func = datasets.CIFAR100
-
     train_dataset = dataset_func(
         dir_, train=True, transform=train_transform, download=True)
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
-    train_loader = torch.utils.data.DataLoader(
-        dataset=train_dataset,
-        batch_size=batch_size * 2,  # to get 2 x for x and x'
+
+    train_dataset_1, train_dataset_2, test_dataset_1, test_dataset_2, _ = torch.utils.data.random_split(
+        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), [n, n, n, n, 60000 - 4 * n])
+
+    train_loader_1 = torch.utils.data.DataLoader(
+        dataset=train_dataset_1,
+        batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=num_workers,
     )
-    test_loader = torch.utils.data.DataLoader(
-        dataset=test_dataset,
-        batch_size=batch_size * 2,  # to get 2 x for x'' and x'''
+    train_loader_2 = torch.utils.data.DataLoader(
+        dataset=train_dataset_2,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=num_workers,
+    )
+    test_loader_1 = torch.utils.data.DataLoader(
+        dataset=test_dataset_1,
+        batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=2,
     )
-    return train_loader, test_loader
+    test_loader_2 = torch.utils.data.DataLoader(
+        dataset=test_dataset_2,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
+    return train_loader_1, train_loader_2, test_loader_1, test_loader_2
 
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
@@ -233,34 +251,20 @@ def lln_certificates(output, class_indices, last_layer, L):
     return torch.min(all_certificates, dim=1)[0]
 
 
-def evaluate_certificates(test_loader, model, L, epsilon=36.):
+def evaluate_certificates(test_loader_1, test_loader_2, model, L, criterion, epsilon=36.):
     losses_list = []
-    certificates_list = []
-    correct_list = []
     model.eval()
 
     with torch.no_grad():
-        for i, (X, y) in enumerate(test_loader):
-            X, y = X.cuda(), y.cuda()
-            output = model(X)
-            loss = F.cross_entropy(output, y, reduction='none')
+        for i, (X_1, X_2) in enumerate(zip(test_loader_1, test_loader_2)):
+            X_1, X_2 = X_1[0], X_2[0]
+            X_1, X_2 = X_1.cuda(), X_2.cuda()
+            output_1, output_2 = model(X_1), model(X_2)
+            loss = criterion(output_1, output_2)
             losses_list.append(loss)
 
-            output_max, output_amax = torch.max(output, dim=1)
-
-            if model.lln:
-                certificates = lln_certificates(output, output_amax, model.last_layer, L)
-            else:
-                certificates = ortho_certificates(output, output_amax, L)
-
-            correct = (output_amax == y)
-            certificates_list.append(certificates)
-            correct_list.append(correct)
-
-        losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
-        certificates_array = torch.cat(certificates_list, dim=0).cpu().numpy()
-        correct_array = torch.cat(correct_list, dim=0).cpu().numpy()
-    return losses_array, correct_array, certificates_array
+        losses_array = torch.stack(losses_list).cpu().numpy()
+    return np.mean(losses_array)
 
 
 conv_mapping = {

@@ -20,11 +20,14 @@ logger = logging.getLogger(__name__)
 
 # [x] TODO: Define our loss
 def iso_loss(data1, data2):
-    return -(data1 - data2).mean()  # the loss should be negative since we want to maximize it
+    return - torch.abs((data1 - data2).mean())  # the loss should be negative since we want to maximize it
 
 
 def get_args():
     parser = argparse.ArgumentParser()
+
+    # isoperimetry arguments
+    parser.add_argument('--n', default=10, type=int)
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -68,20 +71,6 @@ def init_model(args):
     return model
 
 
-def robust_statistics(losses_arr, correct_arr, certificates_arr,
-                      epsilon_list=[36., 72., 108., 144., 180., 216.]):
-    mean_loss = np.mean(losses_arr)
-    mean_acc = np.mean(correct_arr)
-    mean_certs = (certificates_arr * correct_arr).sum()/correct_arr.sum()
-
-    robust_acc_list = []
-    for epsilon in epsilon_list:
-        robust_correct_arr = (certificates_arr > (epsilon/255.)) & correct_arr
-        robust_acc = robust_correct_arr.sum()/robust_correct_arr.shape[0]
-        robust_acc_list.append(robust_acc)
-    return mean_loss, mean_acc, mean_certs, robust_acc_list
-
-
 def main():
     args = get_args()
 
@@ -89,6 +78,7 @@ def main():
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     args.out_dir += '_' + str(args.dataset)
+    args.out_dir += '_n=' + str(args.n)
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
@@ -121,8 +111,11 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    # [x] TODO: change the data loader to return x and x' as a pair rather than returning y
-    train_loader, test_loader = get_loaders(args.data_dir, args.batch_size, args.dataset)
+    assert args.n <= 60000/4  # Make sure that n is not too large
+
+    train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
+        args.data_dir, args.batch_size, args.n, args.dataset)
+
     std = cifar10_std
     if args.dataset == 'cifar10':
         args.num_classes = 10
@@ -149,11 +142,9 @@ def main():
     if args.opt_level == 'O2':
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
-
-    # criterion = nn.CrossEntropyLoss()
     criterion = iso_loss
 
-    lr_steps = args.epochs * len(train_loader)
+    lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
                                                                       (3 * lr_steps) // 4], gamma=0.1)
 
@@ -164,67 +155,55 @@ def main():
     # Training
     std = torch.tensor(std).cuda()
     L = 1/torch.max(std)
-    prev_robust_acc = 0.
+    prev_test_loss = 0.
     start_train_time = time.time()
-    logger.info('Epoch\tSeconds\tLR\tTrain Loss\tTest Loss\tTest Acc')
+
+    # only need train and test loss
+    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss \t ')
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
         train_loss = 0
-        train_cert = 0
-        train_robust = 0
-        train_acc = 0
         train_n = 0
-        for i, (X, _) in enumerate(train_loader):
-            X = X.cuda()
-            if X.shape[0] != args.batch_size * 2:
-                continue
-            # split X into X_1 and X_2
-            X_1, X_2 = X[:args.batch_size, :, :, :], X[args.batch_size:, :, :, :]
 
-            # print(X_1.shape, X_2.shape)
+        for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
+            X_1, X_2 = X_1[0], X_2[0]
+            X_1, X_2 = X_1.cuda(), X_2.cuda()
+
             output_1, output_2 = model(X_1), model(X_2)
-            # print(output_1.shape, output_2.shape)
-            # curr_correct = (output_1.max(1)[1] == y)
             # if args.lln:
-            #     curr_cert = lln_certificates(output_1, y, model.last_layer, L)
+            #     curr_cert = lln_certificates(output, y, model.last_layer, L)
             # else:
-            #     curr_cert = ortho_certificates(output_1, y, L)
+            #     curr_cert = ortho_certificates(output, y, L)
 
-            ce_loss = criterion(output_1, output_2)  # [x] TODO change to iso_loss()
-            loss = ce_loss  # - args.gamma * F.relu(curr_cert).mean()
+            # ce_loss = criterion(output_1, output_2)
+            # loss = ce_loss - args.gamma * F.relu(curr_cert).mean()
+
+            loss = criterion(output_1, output_2)
 
             opt.zero_grad()
             with amp.scale_loss(loss, opt) as scaled_loss:
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += ce_loss.item()
-            # train_cert += (curr_cert * curr_correct).sum().item()
-            # train_robust += ((curr_cert > (args.epsilon/255.)) * curr_correct).sum().item()
-            # train_acc += curr_correct.sum().item()
-            # train_n += y.size(0)
-            # train_n += X.size(0)
-            train_n += 1
+            train_loss += loss.item() * X_1.size(0)
+
+            train_n += X_1.size(0)
             scheduler.step()
 
         # Check current test accuracy of model
-        losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model, L)
+        test_loss = evaluate_certificates(
+            test_loader_1, test_loader_2, model, L, criterion)
 
-        test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
-            losses_arr, correct_arr, certificates_arr)
-
-        robust_acc = test_robust_acc_list[0]
-        if (robust_acc >= prev_robust_acc):
+        if (test_loss <= prev_test_loss):
             torch.save(model.state_dict(), best_model_path)
-            prev_robust_acc = robust_acc
+            prev_test_loss = test_loss
             best_epoch = epoch
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
-        logger.info('%d\t%.1f\t%.4f\t%.4f\t\t%.4f\t\t%.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss,
-                    test_loss, test_acc)
+        logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
+                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss)
 
         torch.save(model.state_dict(), last_model_path)
 
@@ -242,15 +221,12 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L)
+    test_loss = evaluate_certificates(
+        test_loader_1, test_loader_2, model, L, criterion)
     total_time = time.time() - start_test_time
 
-    test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
-        losses_arr, correct_arr, certificates_arr)
-
-    logger.info('Best Epoch\tTest Loss\tTest Acc\tTest Time')
-    logger.info('%d\t\t%.4f\t\t%.4f\t%.4f', best_epoch, test_loss, test_acc,
-                total_time)
+    logger.info('Best Epoch \t Test Loss \t Test Time')
+    logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
 
     # Evaluation at last model
     model_test.load_state_dict(torch.load(last_model_path))
@@ -258,15 +234,12 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    losses_arr, correct_arr, certificates_arr = evaluate_certificates(test_loader, model_test, L)
+    test_loss = evaluate_certificates(
+        test_loader_1, test_loader_2, model, L, criterion)
     total_time = time.time() - start_test_time
 
-    test_loss, test_acc, test_cert, test_robust_acc_list = robust_statistics(
-        losses_arr, correct_arr, certificates_arr)
-
-    logger.info('Last Epoch\tTest Loss\tTest Acc\tTest Time')
-    logger.info('%d\t\t%.4f\t\t%.4f\t%.4f', epoch, test_loss, test_acc,
-                total_time)
+    logger.info('Last Epoch \t Test Loss \t Test Time')
+    logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
 
 
 if __name__ == "__main__":
