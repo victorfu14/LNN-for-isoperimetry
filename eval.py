@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from shutil import copyfile
-from train import iso_loss, init_model, get_args
+from train import iso_l1_loss, init_model, get_args
 
 import numpy as np
 import torch
@@ -47,7 +47,7 @@ def main():
         format='%(message)s',
         level=logging.INFO,
         filename=os.path.join(args.out_dir, output))
-    logger.info(args)
+    # logger.info(args)
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -55,19 +55,19 @@ def main():
 
     assert args.n in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]  # Make sure that n is not too large
 
+    args.num_classes = 1
+
+    # TODO we should still look at L_1 loss when evaluating
+    criterion = iso_l1_loss
+
     logger.info('Model \t n \t Train Loss \t Test Loss \t Test Time')
+    model = init_model(args).cuda()
+    best_model_path = os.path.join(args.out_dir, 'best.pth')
+    last_model_path = os.path.join(args.out_dir, 'last.pth')
 
     for n_eval in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]:
         train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
             args.data_dir, args.batch_size, args.n, args.dataset, eval=True, n_eval=n_eval)
-
-        args.num_classes = 1
-
-        criterion = iso_loss
-
-        best_model_path = os.path.join(args.out_dir, 'best.pth')
-        last_model_path = os.path.join(args.out_dir, 'last.pth')
-
         # Evaluation at best model
         model = init_model(args).cuda()
         model.load_state_dict(torch.load(best_model_path))
@@ -76,13 +76,16 @@ def main():
 
         start_test_time = time.time()
         train_loss = evaluate_certificates(
-            test_loader_1, test_loader_2, model, criterion, eval=True)
+            train_loader_1, train_loader_2, model, criterion, eval=True)
         test_loss = evaluate_certificates(
             test_loader_1, test_loader_2, model, criterion, eval=True)
         total_time = time.time() - start_test_time
 
         logger.info('%s \t %d \t %.4f \t %.4f \t %.4f', 'Best', n_eval, train_loss, test_loss, total_time)
 
+    for n_eval in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]:
+        train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
+            args.data_dir, args.batch_size, args.n, args.dataset, eval=True, n_eval=n_eval)
         # Evaluation at last model
         model.load_state_dict(torch.load(last_model_path))
         model.float()
