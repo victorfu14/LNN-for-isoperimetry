@@ -23,6 +23,7 @@ def get_args():
     # isoperimetry arguments
     parser.add_argument('--sample-size', default=1000, type=int)
     parser.add_argument('--val-size', default=100, type=int)
+    parser.add_argument('--eval-only', default=False, type=bool)
     # parser.add_argument('--test-size', default=1000, type=int)
     
     # Training specifications
@@ -109,7 +110,13 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader_1, train_loader_2, val_loader, test_loader = get_loaders(args.data_dir, args.batch_size, args.dataset, args.sample_size, args.val_size)
+    train_loader_1, train_loader_2, val_loader, test_loader = get_loaders(
+        args.data_dir, 
+        args.batch_size, 
+        args.dataset, 
+        train_size = args.sample_size, 
+        val_size = args.val_size
+    )
     std = cifar10_std if args.dataset == "cifar10" else cifar100_std
 
     # Only need R^d -> R lipschitz functions
@@ -174,8 +181,8 @@ def main():
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += -torch.sqrt(-ce_loss)
-            train_n += 1
+            train_loss += -torch.sqrt(-ce_loss) * X_1.size(0)
+            train_n += X_1.size(0)
             scheduler.step()
             
         # Check current model on validation set
@@ -204,8 +211,7 @@ def main():
     # Evaluate on different test sample sizes
     for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
         logger.info('Test sample size = %d', test_size)
-        test_sample = np.split(np.arange(test_size), 2)
-        test_sample = np.split(np.random.choice(len(test_loader), size=test_size*2, replace=False), 2)
+        test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
         # Evaluation at best model (early stopping)
         model_test = init_model(args).cuda()
         model_test.load_state_dict(torch.load(best_model_path))
