@@ -40,7 +40,7 @@ def main():
 
     for n_eval in eval_list:
         train_loader_1, train_loader_2, valid_loader_1, valid_loader_2, test_loader_1, test_loader_2 = get_eval_loaders(
-            args.data_dir, n_eval, args.n, args.dataset, args.workers)
+            args.data_dir, n_eval=n_eval, n=args.n, dataset_name=args.dataset, num_workers=args.workers)
 
         model = init_model(args).cuda()
         model.load_state_dict(torch.load(best_model_path))
@@ -64,7 +64,7 @@ def main():
     logger.info('-------------------------Last Model--------------------------')
     for n_eval in eval_list:
         train_loader_1, train_loader_2, valid_loader_1, valid_loader_2, test_loader_1, test_loader_2 = get_eval_loaders(
-            args.data_dir, n_eval, args.n, args.dataset, args.workers)
+            args.data_dir, n_eval=n_eval, n=args.n, dataset_name=args.dataset, num_workers=args.workers)
 
         model = init_model(args).cuda()
         model.load_state_dict(torch.load(last_model_path))
