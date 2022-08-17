@@ -19,18 +19,18 @@ logger = logging.getLogger(__name__)
 
 
 def iso_l1_loss(data1, data2):
-    return -(data1 - data2).mean()  # the loss sign shouldn't matter since either is ok. (x, x' are just symbols)
+    return -(data1 - data2).mean(0)  # the loss sign shouldn't matter since either is ok. (x, x' are just symbols)
 
 
 def iso_l2_loss(data1, data2):
-    return -(data1 - data2).mean().square()
+    return -((data1 - data2).mean(0).square())
 
 
 def get_args():
     parser = argparse.ArgumentParser()
 
     # isoperimetry arguments
-    parser.add_argument('--n', default=10, type=int, help='n for number of samples training on')
+    parser.add_argument('--n', default=10000, type=int, help='n for number of samples training on')
     parser.add_argument('--l', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
 
     # Training specifications
@@ -118,10 +118,11 @@ def main():
 
     assert args.n in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]  # Make sure that n is not too large
 
-    train_loader_1, train_loader_2, test_loader_1, test_loader_2 = get_loaders(
+    train_loader_1, train_loader_2, valid_loader_1, valid_loader_2 = get_train_loaders(
         args.data_dir, args.batch_size, args.n, args.dataset)
 
-    std = cifar10_std
+    assert len(valid_loader_1) == 1 and len(valid_loader_2) == 1
+
     # if args.dataset == 'cifar10':
     #     args.num_classes = 10
     # elif args.dataset == 'cifar100':
@@ -152,8 +153,10 @@ def main():
 
     if args.l == 'l1':
         criterion = iso_l1_loss
-    else:
+    elif args.l == 'l2':
         criterion = iso_l2_loss
+    else:
+        raise Exception('Unknown loss')
 
     lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
@@ -164,13 +167,11 @@ def main():
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
 
     # Training
-    std = torch.tensor(std).cuda()
-    # L = 1/torch.max(std)
-    prev_test_loss = 0.
+    prev_valid_loss = 0.
     start_train_time = time.time()
 
     # only need train and test loss
-    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Test Loss')
+    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Valid Loss')
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
@@ -203,18 +204,17 @@ def main():
             scheduler.step()
 
         # Check current test accuracy of model
-        test_loss = evaluate_certificates(
-            test_loader_1, test_loader_2, model, criterion)
+        valid_loss = evaluate(valid_loader_1, valid_loader_2, model, criterion)
 
-        if (test_loss <= prev_test_loss):
+        if (valid_loss <= prev_valid_loss):
             torch.save(model.state_dict(), best_model_path)
-            prev_test_loss = test_loss
+            prev_valid_loss = valid_loss
             best_epoch = epoch
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
         logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, test_loss/train_n)
+                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, valid_loss)
 
         torch.save(model.state_dict(), last_model_path)
 
@@ -232,12 +232,11 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    test_loss = evaluate_certificates(
-        test_loader_1, test_loader_2, model_test, criterion)
+    valid_loss = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
     total_time = time.time() - start_test_time
 
-    logger.info('Best Epoch \t Test Loss \t Test Time')
-    logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
+    logger.info('Best Epoch \t Valid Loss \t Test Time')
+    logger.info('%d \t %.4f \t %.4f', best_epoch, valid_loss, total_time)
 
     # Evaluation at last model
     model_test.load_state_dict(torch.load(last_model_path))
@@ -245,12 +244,11 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    test_loss = evaluate_certificates(
-        test_loader_1, test_loader_2, model_test, criterion)
+    valid_loss = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
     total_time = time.time() - start_test_time
 
-    logger.info('Last Epoch \t Test Loss \t Test Time')
-    logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
+    logger.info('Last Epoch \t Valid Loss \t Test Time')
+    logger.info('%d \t %.4f \t %.4f', epoch, valid_loss, total_time)
 
 
 if __name__ == "__main__":

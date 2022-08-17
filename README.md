@@ -1,45 +1,38 @@
 # Skew Orthogonal Convolutions
 
-+ **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions.
-+ **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
-+ **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
-+ **Householder Activations (HH)** improve the performance of deeper networks.
-
-## Prerequisites
-
-+ Python 3.7 or 3.8
-+ Pytorch 1.8
-+ requests. Can be installed using ```pip install requests```
-+ einops. Can be installed using ```pip install einops```
-+ NVIDIA Apex. Can be installed using ```conda install -c conda-forge nvidia-apex```
-+ A recent NVIDIA GPU
-
-> On GreatLakes, you need to manually download the datasets... `requests` doesn't really work.
+- **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions.
+- **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
+- **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
+- **Householder Activations (HH)** improve the performance of deeper networks.
 
 ## TODO
 
-+ [ ] 🎨 Draw a line plot
-+ [ ] 🧪 Implement Validation set partition
-+ [x] 🧪 Use Square Root loss
-+ [ ] 🧪 Use Gaussian data as a sanity check.
+- [ ] 🎨 Draw a line plot
+- [x] 🧪 Implement Validation set partition
+- [x] 🧪 Use Square Root loss
+- [ ] 🧪 Use Gaussian data as a sanity check.
+
+## Prerequisites
+
+- Python 3.7 or 3.8
+- Pytorch 1.8
+- requests. Can be installed using ```pip install requests```
+- einops. Can be installed using ```pip install einops```
+- NVIDIA Apex. Can be installed using ```conda install -c conda-forge nvidia-apex```
+- A recent NVIDIA GPU
+
+> On GreatLakes, you need to manually download the datasets... `requests` doesn't really work.
 
 ## How to train 1-Lipschitz Convnets?
 
 ```python train_robust.py --conv-layer CONV --activation ACT --block-size BLOCKS --dataset DATASET --gamma GAMMA```
 
-+ CONV: bcop, cayley, soc
-+ ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
-+ BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
-+ GAMMA: certificate regularization coefficient
-+ Use ```--lln``` to enable last layer normalization
-+ DATASET: cifar10/cifar100.
-
-## Note
-
-1. Given $X, X^\prime$, the loss is defined as $L(X, X^\prime)\coloneqq - \frac{1}{N} \sum_{i=1}^{N} (f(x_i) - f(x^\prime_i))$
-2. When reporting the loss when testing samples $X^{\prime \prime}, X^{\prime\prime\prime}$, we don't care about the sign, hence we report $\left\vert L(X^{\prime\prime}, X^{\prime\prime\prime}) \right\vert$.
-3. Change the number of classes to $1$ since we only want to consider $\mathcal{F}$ such that $f\colon R^d \to [-1, 1]$. (not sure how to enforce the last layer to be in $[-1, 1]$)
-4. Don't need data augmentation.
+- CONV: bcop, cayley, soc
+- ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
+- BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
+- GAMMA: certificate regularization coefficient
+- Use ```--lln``` to enable last layer normalization
+- DATASET: cifar10/cifar100.
 
 ## Citations
 
@@ -64,3 +57,11 @@ If you find this repository useful for your research, please cite:
   url={https://openreview.net/forum?id=tD7eCtaSkR}
 }
 ```
+
+## Note
+
+1. Given $X, X^\prime$, the loss is defined as $L(X, X^\prime)\coloneqq - \frac{1}{N} \sum_{i=1}^{N} (f(x_i) - f(x^\prime_i))$
+2. When reporting the loss when testing samples $X^{\prime \prime}, X^{\prime\prime\prime}$, we don't care about the sign, hence we report $\left\vert L(X^{\prime\prime}, X^{\prime\prime\prime}) \right\vert$.
+3. Change the number of classes to $1$ since we only want to consider $\mathcal{F}$ such that $f\colon R^d \to \mathbb{R}$.
+4. Don't need data augmentation.
+5. The data is split into 20000 training + 20000 valid (every time do validation will use the whole set) and variable size testing set.

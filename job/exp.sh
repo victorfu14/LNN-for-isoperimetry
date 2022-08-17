@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=iso-l2
+#SBATCH --job-name=iso-cifar100
 
 #SBATCH --mail-user=pbb@umich.edu
 
@@ -27,11 +27,11 @@ conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000 --l l1
-python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --n 10000
+python train.py --conv-layer soc --block-size 4 --dataset cifar100 --l l1
+python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --l l1
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000 --l l1
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --n 10000
+python train.py --conv-layer soc --block-size 4 --dataset cifar100 --l l2
+python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --l l2
 
 /bin/hostname
 sleep 60
