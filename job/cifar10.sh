@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=iso-cifar100
+#SBATCH --job-name=iso-cifar10
 
 #SBATCH --mail-user=pbb@umich.edu
 
@@ -20,18 +20,18 @@
 
 #SBATCH --account=vvh0
 
-#SBATCH --output=/home/%u/logs/%x-%j.log
+#SBATCH --output=/home/%u/Project/ISO/logs/%x-%j.log
 
 source /home/pbb/anaconda3/etc/profile.d/conda.sh
 conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar100 --l l1
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --l l1
+python train.py --conv-layer soc --block-size 4 --dataset cifar10 --l l1 --lr-max 0.1
+python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --l l1
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar100 --l l2
-python eval.py --conv-layer soc --block-size 4 --dataset cifar100 --l l2
+python train.py --conv-layer soc --block-size 4 --dataset cifar10 --l l2 --lr-max 0.01
+python eval.py --conv-layer soc --block-size 4 --dataset cifar10 --l l2
 
 /bin/hostname
 sleep 60
