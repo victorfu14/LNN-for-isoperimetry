@@ -24,6 +24,7 @@ def get_args():
     parser.add_argument('--sample-size', default=1000, type=int)
     parser.add_argument('--val-size', default=100, type=int)
     parser.add_argument('--eval-only', default=False, type=bool)
+    parser.add_argument('--loss', default='l2', type=str, choices=['l1', 'l2'])
     # parser.add_argument('--test-size', default=1000, type=int)
     
     # Training specifications
@@ -77,6 +78,8 @@ def main():
     args.out_dir += '_' + str(args.dataset)
     args.out_dir += '_train_size=' + str(args.sample_size)
     args.out_dir += '_val_size=' + str(args.val_size)
+    args.out_dir += '_loss=' + str(args.loss)
+    args.out_dir += '_mom=' + str(args.momentum)
     args.out_dir += '_' + str(args.block_size) 
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
@@ -140,7 +143,7 @@ def main():
     if args.opt_level == 'O2':
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
-    criterion = isoLoss()
+    criterion = isoLoss(args.loss)
 
     arr = np.arange(args.val_size * 2)
     np.random.shuffle(arr)
@@ -181,13 +184,19 @@ def main():
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += -torch.sqrt(-ce_loss) * X_1.size(0)
+            if args.loss == 'l1': 
+                train_loss += ce_loss * X_1.size(0)
+            else:
+                train_loss += -torch.sqrt(-ce_loss) * X_1.size(0)
             train_n += X_1.size(0)
             scheduler.step()
             
         # Check current model on validation set
-        losses_arr = evaluate(val_loader, model, val_sample)
+        losses_arr = evaluate(val_loader, model, val_sample, args.loss)
         val_loss = np.mean(losses_arr)
+
+        if args.loss == 'l1':
+            val_loss = -np.abs(val_loss)
         
         if (val_loss <= prev_val_loss):
             torch.save(model.state_dict(), best_model_path)
@@ -219,7 +228,7 @@ def main():
         model_test.eval()
             
         start_test_time = time.time()
-        losses_arr = evaluate(test_loader, model_test, test_sample)
+        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
         total_time = time.time() - start_test_time
         test_loss = np.mean(losses_arr)
         
@@ -233,7 +242,7 @@ def main():
         model_test.eval()
 
         start_test_time = time.time()
-        losses_arr = evaluate(test_loader, model_test, test_sample)
+        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
         total_time = time.time() - start_test_time
         test_loss = np.mean(losses_arr)
         

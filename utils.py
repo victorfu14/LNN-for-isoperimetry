@@ -17,23 +17,26 @@ std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
 
-def isoLossEval(output1, output2, subsample_size=10, subsample=None, randomize=True):
+def isoLossEval(output1, output2, subsample_size=10, subsample=None, randomize=True, type='l2'):
+    power = 2 if type == 'l2' else 1
     if randomize == False:
-        return -torch.mean(output1 - output2) ** 2
+        return -torch.mean(output1 - output2) ** power
     if subsample is None:
         loss = -torch.mean(output1[np.random.choice(output1.size()[0], size=subsample_size)] 
-                         - output2[np.random.choice(output2.size()[0], size=subsample_size)]) ** 2
+                         - output2[np.random.choice(output2.size()[0], size=subsample_size)]) ** power
     else:
         loss = -torch.mean(output1[subsample[0]]
-                        - output2[subsample[1]]) ** 2
+                        - output2[subsample[1]]) ** power
     return loss
 
 class isoLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, loss='l1'):
         super(isoLoss, self).__init__()
+        self.loss = loss
     
     def forward(self, output1, output2):
-        return isoLossEval(output1, output2, randomize=False)
+            return isoLossEval(output1, output2, type=self.loss, randomize=False)
+
 
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
@@ -110,16 +113,16 @@ def get_loaders(dir_, batch_size=None, dataset_name='cifar10', normalize=True, t
     )
     return train_loader_1, train_loader_2, val_loader, test_loader
 
-def evaluate(test_loader, model, sample):
+def evaluate(data_loader, model, sample, loss='l2'):
     losses_list = []
     model.eval()
 
     with torch.no_grad():
-        for i, (X, _) in enumerate(test_loader):
+        for i, (X, _) in enumerate(data_loader):
             X = X.cuda() 
             output1 = model(X[sample[0]])
             output2 = model(X[sample[1]])
-            loss = torch.tensor(np.array([isoLossEval(output1, output2, randomize=False).cpu().numpy()]))
+            loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss, randomize=False).cpu().numpy()]))
             losses_list.append(loss)
                 
         losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
