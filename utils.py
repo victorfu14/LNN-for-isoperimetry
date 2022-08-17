@@ -30,7 +30,7 @@ def clamp(X, lower_limit, upper_limit):
 # We partition our dataset into 10000+10000/10000+10000/10000+10000
 
 
-def get_eval_loaders(dir_, n_eval=10000, n=10000, dataset_name='cifar10', normalize=True):
+def init_dataset(dir_, dataset_name='cifar10', normalize=True):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean
@@ -57,14 +57,16 @@ def get_eval_loaders(dir_, n_eval=10000, n=10000, dataset_name='cifar10', normal
             transforms.ToTensor(),
         ])
 
-    num_workers = 4
     train_dataset = dataset_func(
         dir_, train=True, transform=train_transform, download=True)
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
+    return torch.utils.data.ConcatDataset([train_dataset, test_dataset])
 
-    train_dataset_1, train_dataset_2, valid_dataset_1, valid_dataset_2, test_dataset_1, test_dataset_2, _ = torch.utils.data.random_split(
-        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), [n, n, n, n, n_eval, n_eval, 60000 - 4 * n - 2 * n_eval])
+
+def get_eval_loaders(dir_, n_eval=10000, n=10000, dataset_name='cifar10', normalize=True, num_workers=4):
+    train_dataset_1, train_dataset_2, valid_dataset_1, valid_dataset_2, test_dataset_1, test_dataset_2 = torch.utils.data.random_split(
+        init_dataset(dir_, dataset_name, normalize), [n, n, n, n, n, n])
 
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_dataset_1,
@@ -82,18 +84,18 @@ def get_eval_loaders(dir_, n_eval=10000, n=10000, dataset_name='cifar10', normal
     )
 
     valid_loader_1 = torch.utils.data.DataLoader(
-        dataset=test_dataset_1,
+        dataset=valid_dataset_1,
         batch_size=n,
         shuffle=True,
         pin_memory=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
     valid_loader_2 = torch.utils.data.DataLoader(
-        dataset=test_dataset_2,
+        dataset=valid_dataset_2,
         batch_size=n,
         shuffle=True,
         pin_memory=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
 
     test_loader_1 = torch.utils.data.DataLoader(
@@ -101,53 +103,22 @@ def get_eval_loaders(dir_, n_eval=10000, n=10000, dataset_name='cifar10', normal
         batch_size=n_eval,
         shuffle=True,
         pin_memory=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
     test_loader_2 = torch.utils.data.DataLoader(
         dataset=test_dataset_2,
         batch_size=n_eval,
         shuffle=True,
         pin_memory=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
+
     return train_loader_1, train_loader_2, valid_loader_1, valid_loader_2, test_loader_1, test_loader_2
 
 
-def get_train_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True):
-    if dataset_name == 'cifar10':
-        dataset_func = datasets.CIFAR10
-        mean = cifar10_mean
-        std = cifar10_std
-    elif dataset_name == 'cifar100':
-        dataset_func = datasets.CIFAR100
-        mean = cifar100_mean
-        std = cifar100_std
-
-    if normalize:
-        train_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
-    else:
-        train_transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-
-    num_workers = 4
-    train_dataset = dataset_func(
-        dir_, train=True, transform=train_transform, download=True)
-    test_dataset = dataset_func(
-        dir_, train=False, transform=test_transform, download=True)
-
+def get_train_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, num_workers=4):
     train_dataset_1, train_dataset_2, valid_dataset_1, valid_dataset_2, _ = torch.utils.data.random_split(
-        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), [n, n, n, n, 60000 - 4 * n])
+        init_dataset(dir_, dataset_name, normalize), [n, n, n, n, 60000 - 4 * n])
 
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_dataset_1,
@@ -169,14 +140,14 @@ def get_train_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=Tru
         batch_size=n,
         shuffle=True,
         pin_memory=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
     valid_loader_2 = torch.utils.data.DataLoader(
         dataset=valid_dataset_2,
         batch_size=n,
         shuffle=True,
         pin_memory=True,
-        num_workers=2,
+        num_workers=num_workers,
     )
 
     return train_loader_1, train_loader_2, valid_loader_1, valid_loader_2
@@ -353,7 +324,7 @@ def evaluate(loader_1, loader_2, model, criterion):
             losses_list.append(loss)
 
         losses_array = torch.stack(losses_list).cpu().numpy()
-    return np.mean(losses_array)
+    return losses_array[0], losses_array
 
 
 conv_mapping = {
