@@ -65,3 +65,4 @@ If you find this repository useful for your research, please cite:
 3. Change the number of classes to $1$ since we only want to consider $\mathcal{F}$ such that $f\colon R^d \to \mathbb{R}$.
 4. Don't need data augmentation.
 5. The data is split into 20000 training + 20000 valid (every time do validation will use the whole set) and variable size testing set.
+6. When using square loss, make `lr-max=0.001` instead of `0.01`

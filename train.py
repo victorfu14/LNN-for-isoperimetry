@@ -23,7 +23,7 @@ def iso_l1_loss(data1, data2):
 
 
 def iso_l2_loss(data1, data2):
-    return -((data1 - data2).mean(0).square())
+    return -(((data1 - data2).mean(0))**2)
 
 
 def get_args():
@@ -34,13 +34,12 @@ def get_args():
     parser.add_argument('--l', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
 
     # Training specifications
-    parser.add_argument('--batch-size', default=128, type=int)
+    parser.add_argument('--batch-size', default=500, type=int)
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--lr-min', default=0., type=float)
-    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--gamma', default=0., type=float, help='gamma for certificate regularization')
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
                         help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
     parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
@@ -63,9 +62,40 @@ def get_args():
 
     # Other specifications
     parser.add_argument('--epsilon', default=36, type=int)
-    parser.add_argument('--out-dir', default='LipConvnet', type=str, help='Output directory')
+    parser.add_argument('--out-dir', default='ISO', type=str, help='Output directory')
+    parser.add_argument('--workers', default=4, type=int, help='Number of workers used in data-loading')
     parser.add_argument('--seed', default=0, type=int, help='Random seed')
     return parser.parse_args()
+
+
+def init_log(args, log_name='output.log'):
+    args.out_dir += '_' + str(args.dataset)
+    args.out_dir += '_' + str(args.l)
+    args.out_dir += '_' + str(args.block_size)
+    args.out_dir += '_' + str(args.conv_layer)
+    args.out_dir += '_' + str(args.init_channels)
+    args.out_dir += '_' + str(args.activation)
+    if args.lln:
+        args.out_dir += '_lln'
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    code_dir = os.path.join(args.out_dir, 'code')
+    os.makedirs(code_dir, exist_ok=True)
+    for f in os.listdir('./'):
+        src = os.path.join('./', f)
+        dst = os.path.join(code_dir, f)
+        if os.path.isfile(src):
+            if f[-3:] == '.py' or f[-3:] == '.sh':
+                copyfile(src, dst)
+
+    logfile = os.path.join(args.out_dir, log_name)
+    if os.path.exists(logfile):
+        os.remove(logfile)
+
+    logging.basicConfig(
+        format='%(message)s',
+        level=logging.INFO,
+        filename=os.path.join(args.out_dir, log_name))
 
 
 def init_model(args):
@@ -81,58 +111,20 @@ def main():
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
-    args.out_dir += '_' + str(args.dataset)
-    args.out_dir += '_' + str(args.l)
-    args.out_dir += '_n=' + str(args.n)
-    args.out_dir += '_' + str(args.block_size)
-    args.out_dir += '_' + str(args.conv_layer)
-    args.out_dir += '_' + str(args.init_channels)
-    args.out_dir += '_' + str(args.activation)
-    args.out_dir += '_cr' + str(args.gamma)
-    if args.lln:
-        args.out_dir += '_lln'
-
-    os.makedirs(args.out_dir, exist_ok=True)
-    code_dir = os.path.join(args.out_dir, 'code')
-    os.makedirs(code_dir, exist_ok=True)
-    for f in os.listdir('./'):
-        src = os.path.join('./', f)
-        dst = os.path.join(code_dir, f)
-        if os.path.isfile(src):
-            if f[-3:] == '.py' or f[-3:] == '.sh':
-                copyfile(src, dst)
-
-    logfile = os.path.join(args.out_dir, 'output.log')
-    if os.path.exists(logfile):
-        os.remove(logfile)
-
-    logging.basicConfig(
-        format='%(message)s',
-        level=logging.INFO,
-        filename=os.path.join(args.out_dir, 'output.log'))
+    init_log(args, log_name='output.log')
     logger.info(args)
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    assert args.n in [10000, 8000, 6000, 4000, 2000, 1000, 500, 100]  # Make sure that n is not too large
-
-    train_loader_1, train_loader_2, valid_loader_1, valid_loader_2 = get_train_loaders(
-        args.data_dir, args.batch_size, args.n, args.dataset)
-
-    assert len(valid_loader_1) == 1 and len(valid_loader_2) == 1
-
-    # if args.dataset == 'cifar10':
-    #     args.num_classes = 10
-    # elif args.dataset == 'cifar100':
-    #     args.num_classes = 100
-    # else:
-    #     raise Exception('Unknown dataset')
-
     args.num_classes = 1
 
-    # Evaluation at early stopping
+    assert args.n == 10000 and args.n % args.batch_size == 0, 'n must be 10000 and divisible by batch size'
+
+    train_loader_1, train_loader_2, valid_loader_1, valid_loader_2 = get_train_loaders(
+        args.data_dir, args.batch_size, args.n, args.dataset, args.workers)
+
     model = init_model(args).cuda()
     model.train()
 
@@ -204,7 +196,7 @@ def main():
             scheduler.step()
 
         # Check current test accuracy of model
-        valid_loss = evaluate(valid_loader_1, valid_loader_2, model, criterion)
+        valid_loss, _ = evaluate(valid_loader_1, valid_loader_2, model, criterion)
 
         if (valid_loss <= prev_valid_loss):
             torch.save(model.state_dict(), best_model_path)
@@ -232,7 +224,7 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    valid_loss = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
+    valid_loss, _ = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
     total_time = time.time() - start_test_time
 
     logger.info('Best Epoch \t Valid Loss \t Test Time')
@@ -244,7 +236,7 @@ def main():
     model_test.eval()
 
     start_test_time = time.time()
-    valid_loss = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
+    valid_loss, _ = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
     total_time = time.time() - start_test_time
 
     logger.info('Last Epoch \t Valid Loss \t Test Time')
