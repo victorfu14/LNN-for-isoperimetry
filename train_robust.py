@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument('--batch-size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--lr-min', default=0., type=float)
-    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--gamma', default=0., type=float, help='gamma for certificate regularization')
@@ -68,6 +68,41 @@ def init_model(args):
                        block_size = args.block_size, num_classes=args.num_classes, 
                        lln=args.lln)
     return model
+
+def eval(test_loader, best_model, last_model, args):
+    best_model_path, best_epoch = best_model
+    last_model_path, epoch = last_model
+    # Evaluate on different test sample sizes
+    for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
+        logger.info('Test sample size = %d', test_size)
+        test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
+        # Evaluation at best model (early stopping)
+        model_test = init_model(args).cuda()
+        model_test.load_state_dict(torch.load(best_model_path))
+        model_test.float()
+        model_test.eval()
+            
+        start_test_time = time.time()
+        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
+        total_time = time.time() - start_test_time
+        test_loss = np.mean(losses_arr)
+        
+        # Log isoperimetric test loss
+        logger.info('Best Epoch \t Test Loss \t Test Time')
+        logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
+
+        # Evaluation at last model
+        model_test.load_state_dict(torch.load(last_model_path))
+        model_test.float()
+        model_test.eval()
+
+        start_test_time = time.time()
+        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
+        total_time = time.time() - start_test_time
+        test_loss = np.mean(losses_arr)
+        
+        logger.info('Last Epoch \t Test Loss \t Test Time')
+        logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
 
 def main():
     args = get_args()
@@ -156,6 +191,10 @@ def main():
     best_model_path = os.path.join(args.out_dir, 'best.pth')
     last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
+
+    if args.eval_only == True:
+        eval(test_loader, (best_model_path, -1), (last_model_path, -1), args)
+        return    
     
     # Training
     std = torch.tensor(std).cuda()
@@ -197,6 +236,9 @@ def main():
 
         if args.loss == 'l1':
             val_loss = -np.abs(val_loss)
+            train_loss = train_loss / train_n
+        elif args.loss == 'l2':
+            train_loss = - (train_loss / train_n) ** 2
         
         if (val_loss <= prev_val_loss):
             torch.save(model.state_dict(), best_model_path)
@@ -206,7 +248,7 @@ def main():
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
         logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
-        epoch, epoch_time - start_epoch_time, lr, - (train_loss / train_n) ** 2, val_loss)
+        epoch, epoch_time - start_epoch_time, lr, train_loss, val_loss)
         
         torch.save(model.state_dict(), last_model_path)
         
@@ -217,37 +259,7 @@ def main():
 
     logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
     
-    # Evaluate on different test sample sizes
-    for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
-        logger.info('Test sample size = %d', test_size)
-        test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
-        # Evaluation at best model (early stopping)
-        model_test = init_model(args).cuda()
-        model_test.load_state_dict(torch.load(best_model_path))
-        model_test.float()
-        model_test.eval()
-            
-        start_test_time = time.time()
-        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
-        total_time = time.time() - start_test_time
-        test_loss = np.mean(losses_arr)
-        
-        # Log isoperimetric test loss
-        logger.info('Best Epoch \t Test Loss \t Test Time')
-        logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
-
-        # Evaluation at last model
-        model_test.load_state_dict(torch.load(last_model_path))
-        model_test.float()
-        model_test.eval()
-
-        start_test_time = time.time()
-        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
-        total_time = time.time() - start_test_time
-        test_loss = np.mean(losses_arr)
-        
-        logger.info('Last Epoch \t Test Loss \t Test Time')
-        logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
+    eval(test_loader, (best_model_path, best_epoch), (last_model_path, epoch), args)
 
 if __name__ == "__main__":
     main()

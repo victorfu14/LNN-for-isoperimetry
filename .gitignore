@@ -2,6 +2,7 @@ __pycache__/
 apex/
 cifar-data/
 LipConvnet*/
-LNNIso*/
+LNNIso*/code/
+LNNIso*/*.pth
 .vscode/
 *.sh
