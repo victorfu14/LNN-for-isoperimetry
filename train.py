@@ -114,9 +114,7 @@ def main():
     init_log(args, log_name='output.log')
     logger.info(args)
 
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
+    init_random(args.seed) 
 
     args.num_classes = 1
 

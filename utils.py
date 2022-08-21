@@ -22,6 +22,12 @@ upper_limit = ((1 - mu) / std)
 lower_limit = ((0 - mu) / std)
 
 
+def init_random(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    
+    
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 

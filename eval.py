@@ -17,12 +17,8 @@ def main():
 
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
-
+    
     init_log(args, log_name='eval.log')
-
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
 
     args.num_classes = 1
 
@@ -39,6 +35,7 @@ def main():
     last_model_path = os.path.join(args.out_dir, 'last.pth')
 
     for n_eval in eval_list:
+        init_random(args.seed)
         train_loader_1, train_loader_2, valid_loader_1, valid_loader_2, test_loader_1, test_loader_2 = get_eval_loaders(
             args.data_dir, n_eval=n_eval, n=args.n, dataset_name=args.dataset, num_workers=args.workers)
 
