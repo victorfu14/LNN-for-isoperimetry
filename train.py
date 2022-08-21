@@ -107,19 +107,15 @@ def init_model(args):
 
 def main():
     args = get_args()
-
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     init_log(args, log_name='output.log')
     logger.info(args)
-
-    init_random(args.seed) 
-
     args.num_classes = 1
-
     assert args.n == 10000 and args.n % args.batch_size == 0, 'n must be 10000 and divisible by batch size'
 
+    init_random(args.seed)
     train_loader_1, train_loader_2, valid_loader_1, valid_loader_2 = get_train_loaders(
         args.data_dir, args.batch_size, args.n, args.dataset, args.workers)
 
