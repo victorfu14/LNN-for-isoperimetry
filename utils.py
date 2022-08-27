@@ -38,7 +38,7 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--n', default=15000, type=int, help='n for number of samples training on')
-    parser.add_argument('--l', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
+    parser.add_argument('--loss', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
 
     # Training specifications
     parser.add_argument('--batch-size', default=500, type=int)

@@ -28,7 +28,7 @@ def iso_l2_loss(data1, data2):
 
 def init_log(args, log_name='output.log'):
     args.out_dir += '_' + str(args.dataset)
-    args.out_dir += '_' + str(args.l)
+    args.out_dir += '_' + str(args.loss)
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
@@ -97,9 +97,9 @@ def main():
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
 
-    if args.l == 'l1':
+    if args.loss == 'l1':
         criterion = iso_l1_loss
-    elif args.l == 'l2':
+    elif args.loss == 'l2':
         criterion = iso_l2_loss
     else:
         raise Exception('Unknown loss')
@@ -131,16 +131,7 @@ def main():
         for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
             X_1, X_2 = X_1[0], X_2[0]
             X_1, X_2 = X_1.cuda(), X_2.cuda()
-
             output_1, output_2 = model(X_1), model(X_2)
-            # if args.lln:
-            #     curr_cert = lln_certificates(output, y, model.last_layer, L)
-            # else:
-            #     curr_cert = ortho_certificates(output, y, L)
-
-            # ce_loss = criterion(output_1, output_2)
-            # loss = ce_loss - args.gamma * F.relu(curr_cert).mean()
-
             loss = criterion(output_1, output_2)
 
             opt.zero_grad()
