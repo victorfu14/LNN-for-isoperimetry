@@ -1,17 +1,9 @@
-import copy
 import logging
 import os
 import time
-import math
-from shutil import copyfile
 import wandb
-
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from apex import amp
-
 from lip_convnets import LipConvNet
 from utils import *
 
@@ -24,37 +16,6 @@ def iso_l1_loss(data1, data2):
 
 def iso_l2_loss(data1, data2):
     return -(((data1 - data2).mean(0))**2)
-
-
-def init_log(args, log_name='output.log'):
-    args.out_dir += '_' + str(args.dataset)
-    args.out_dir += '_' + str(args.loss)
-    args.out_dir += '_' + str(args.block_size)
-    args.out_dir += '_' + str(args.conv_layer)
-    args.out_dir += '_' + str(args.init_channels)
-    args.out_dir += '_' + str(args.activation)
-    if args.lln:
-        args.out_dir += '_lln'
-
-    os.makedirs(args.out_dir, exist_ok=True)
-    code_dir = os.path.join(args.out_dir, 'code')
-    os.makedirs(code_dir, exist_ok=True)
-    for f in os.listdir('./'):
-        src = os.path.join('./', f)
-        dst = os.path.join(code_dir, f)
-        if os.path.isfile(src):
-            if f[-3:] == '.py' or f[-3:] == '.sh':
-                copyfile(src, dst)
-
-    logfile = os.path.join(args.out_dir, log_name)
-    if os.path.exists(logfile):
-        os.remove(logfile)
-
-    logging.basicConfig(
-        format='%(message)s',
-        level=logging.INFO,
-        filename=os.path.join(args.out_dir, log_name))
-    wandb.init(project="iso", entity="pbb")
 
 
 def init_model(args):
@@ -71,6 +32,7 @@ def main():
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     init_log(args, log_name='output.log')
+    wandb.init(project="iso", entity="pbb", name=args.dataset+" b={}".format(args.block_size))
     logger.info(args)
     args.num_classes = 1
     assert args.n == 15000 and args.n % args.batch_size == 0, 'n must be 15000 and divisible by batch size'
@@ -148,7 +110,7 @@ def main():
         logger.info('%d \t %.1f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
 
-        wandb.log({"loss": train_loss/train_n})
+        wandb.log({"loss": train_loss/train_n, "lr": lr})
 
         torch.save(model.state_dict(), last_model_path)
 

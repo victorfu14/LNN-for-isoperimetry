@@ -13,7 +13,7 @@
 - [ ] 🧪 Use Gaussian data as a sanity check.
 - [ ] Random $f$
 - [ ] Different Epoch's $f$
-- [ ] Use mean
+- [ ] Use median
 - [ ] Use linear programming to check
 
 ## Prerequisites

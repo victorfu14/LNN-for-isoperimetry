@@ -2,11 +2,13 @@ from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
 from skew_ortho_conv import SOC
 from block_ortho_conv import BCOP
 from cayley_ortho_conv import Cayley, CayleyLinear
+import os
+from shutil import copyfile
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import argparse
 import math
@@ -39,6 +41,7 @@ def get_args():
     # isoperimetry arguments
     parser.add_argument('--n', default=15000, type=int, help='n for number of samples training on')
     parser.add_argument('--loss', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
+    parser.add_argument('--eval-num', default=100, type=int, help='Number of evaluation samples for each n')
 
     # Training specifications
     parser.add_argument('--batch-size', default=500, type=int)
@@ -108,6 +111,36 @@ def init_dataset(dir_, dataset_name='cifar10', normalize=True):
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
     return torch.utils.data.ConcatDataset([train_dataset, test_dataset])
+
+
+def init_log(args, log_name='output.log'):
+    args.out_dir += '_' + str(args.dataset)
+    args.out_dir += '_' + str(args.loss)
+    args.out_dir += '_' + str(args.block_size)
+    args.out_dir += '_' + str(args.conv_layer)
+    args.out_dir += '_' + str(args.init_channels)
+    args.out_dir += '_' + str(args.activation)
+    if args.lln:
+        args.out_dir += '_lln'
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    code_dir = os.path.join(args.out_dir, 'code')
+    os.makedirs(code_dir, exist_ok=True)
+    for f in os.listdir('./'):
+        src = os.path.join('./', f)
+        dst = os.path.join(code_dir, f)
+        if os.path.isfile(src):
+            if f[-3:] == '.py' or f[-3:] == '.sh':
+                copyfile(src, dst)
+
+    logfile = os.path.join(args.out_dir, log_name)
+    if os.path.exists(logfile):
+        os.remove(logfile)
+
+    logging.basicConfig(
+        format='%(message)s',
+        level=logging.INFO,
+        filename=os.path.join(args.out_dir, log_name))
 
 
 def get_loaders(dir_, batch_size=128, n=15000, dataset_name='cifar10', normalize=True, num_workers=4):
