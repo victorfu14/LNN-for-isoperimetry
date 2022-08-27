@@ -1,8 +1,8 @@
 import logging
 import os
 import time
-from shutil import copyfile
 from train import iso_l1_loss, init_model, init_log
+import matplotlib.pyplot as plt
 
 import numpy as np
 import torch
@@ -21,12 +21,17 @@ def evaluate(loader_1, loader_2, n_eval, num, model, criterion):
             X_1, X_2 = X_1[0], X_2[0]
             X_1, X_2 = X_1.cuda(), X_2.cuda()
 
-            output_1, output_2 = model(X_1), model(X_2)
-            loss = criterion(output_1, output_2)
-            losses_list.append(loss)
+            batch_size = num
+            weights = torch.ones(n_eval).expand(batch_size, -1)
+            id_X_1 = torch.multinomial(weights, num_samples=n_eval, replacement=False)
+            id_X_2 = torch.multinomial(weights, num_samples=n_eval, replacement=False)
+            for j, (id_1, id_2) in enumerate(zip(id_X_1, id_X_2)):
+                output_1, output_2 = model(X_1[id_1]), model(X_2[id_2])
+                loss = criterion(output_1, output_2)
+                losses_list.append(loss.item())
 
         losses_array = torch.stack(losses_list).cpu().numpy()
-    return losses_array[0], losses_array
+    return losses_array.median(), losses_array
 
 
 def main():
@@ -65,8 +70,10 @@ def main():
 
         wandb.log({"loss": test_loss})
 
-        print('n = {}: Test Loss: mean: {} | all: {}'.format(
-            n_eval, np.abs(np.mean(test_loss_list)),  np.abs(test_loss_list)))
+        print('n = {}: Test Loss: median: {} | all: {}'.format(
+            n_eval, np.abs(test_loss),  np.abs(test_loss_list)))
+
+        # TODO plot the histogram of the test loss
 
         total_time = time.time() - start_test_time
 
