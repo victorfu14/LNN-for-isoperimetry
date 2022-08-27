@@ -55,11 +55,14 @@ def main():
     model = init_model(args).cuda()
     last_model_path = os.path.join(args.out_dir, 'last.pth')
 
+    fig, a = plt.subplots(nrows=4, ncols=3)
+    a = a.ravel()
+    
     init_random(args.seed)
     _, _, test_loader_1, test_loader_2 = get_loaders(
         args.data_dir, n=args.n, dataset_name=args.dataset, num_workers=args.workers)
 
-    for n_eval in eval_list:
+    for n_eval, idx, ax in enumerate(zip(eval_list, a)):
         model = init_model(args).cuda()
         model.load_state_dict(torch.load(last_model_path))
         model.float()
@@ -74,11 +77,18 @@ def main():
             n_eval, np.abs(test_loss),  np.abs(test_loss_list)))
 
         # TODO plot the histogram of the test loss
-
+        ax.hist(test_loss_list, bins='auto')
+        ax.set_title('n = {}'.format(n_eval))
+        ax.set_xlabel('Test Loss')
+        ax.set_ylabel('Count')
+        
         total_time = time.time() - start_test_time
 
         logger.info('%d \t %.4f \t %.4f \t %.4f \t %.4f',
                     np.abs(test_loss), total_time)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(args.out_dir, 'hist.png'))
 
 
 if __name__ == "__main__":
