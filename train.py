@@ -1,10 +1,10 @@
-import argparse
 import copy
 import logging
 import os
 import time
 import math
 from shutil import copyfile
+import wandb
 
 import numpy as np
 import torch
@@ -24,48 +24,6 @@ def iso_l1_loss(data1, data2):
 
 def iso_l2_loss(data1, data2):
     return -(((data1 - data2).mean(0))**2)
-
-
-def get_args():
-    parser = argparse.ArgumentParser()
-
-    # isoperimetry arguments
-    parser.add_argument('--n', default=10000, type=int, help='n for number of samples training on')
-    parser.add_argument('--l', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
-
-    # Training specifications
-    parser.add_argument('--batch-size', default=500, type=int)
-    parser.add_argument('--epochs', default=200, type=int)
-    parser.add_argument('--lr-min', default=0., type=float)
-    parser.add_argument('--lr-max', default=0.01, type=float)
-    parser.add_argument('--weight-decay', default=5e-4, type=float)
-    parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
-                        help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
-    parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
-                        help='If loss_scale is "dynamic", adaptively adjust the loss scale over time')
-
-    # Model architecture specifications
-    parser.add_argument('--conv-layer', default='soc', type=str, choices=['bcop', 'cayley', 'soc'],
-                        help='BCOP, Cayley, SOC convolution')
-    parser.add_argument('--init-channels', default=32, type=int)
-    parser.add_argument('--activation', default='maxmin', choices=['maxmin', 'hh1', 'hh2'],
-                        help='Activation function')
-    parser.add_argument('--block-size', default=1, type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8],
-                        help='size of each block')
-    parser.add_argument('--lln', action='store_true', help='set last linear to be linear and normalized')
-
-    # Dataset specifications
-    parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100'],
-                        help='dataset to use for training')
-
-    # Other specifications
-    parser.add_argument('--epsilon', default=36, type=int)
-    parser.add_argument('--out-dir', default='ISO', type=str, help='Output directory')
-    parser.add_argument('--workers', default=4, type=int, help='Number of workers used in data-loading')
-    parser.add_argument('--seed', default=0, type=int, help='Random seed')
-    return parser.parse_args()
 
 
 def init_log(args, log_name='output.log'):
@@ -96,6 +54,7 @@ def init_log(args, log_name='output.log'):
         format='%(message)s',
         level=logging.INFO,
         filename=os.path.join(args.out_dir, log_name))
+    wandb.init(project="iso", entity="pbb")
 
 
 def init_model(args):
@@ -107,16 +66,17 @@ def init_model(args):
 
 def main():
     args = get_args()
+
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     init_log(args, log_name='output.log')
     logger.info(args)
     args.num_classes = 1
-    assert args.n == 10000 and args.n % args.batch_size == 0, 'n must be 10000 and divisible by batch size'
+    assert args.n == 15000 and args.n % args.batch_size == 0, 'n must be 15000 and divisible by batch size'
 
     init_random(args.seed)
-    train_loader_1, train_loader_2, valid_loader_1, valid_loader_2 = get_train_loaders(
+    train_loader_1, train_loader_2, _, _ = get_loaders(
         args.data_dir, args.batch_size, args.n, args.dataset, args.workers)
 
     model = init_model(args).cuda()
@@ -148,16 +108,20 @@ def main():
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
                                                                       (3 * lr_steps) // 4], gamma=0.1)
 
-    best_model_path = os.path.join(args.out_dir, 'best.pth')
+    wandb.config = {
+        "learning_rate": args.lr_max,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size
+    }
+
     last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
 
     # Training
-    prev_valid_loss = 0.
     start_train_time = time.time()
 
     # only need train and test loss
-    logger.info('Epoch \t Seconds \t LR \t Train Loss \t Valid Loss')
+    logger.info('Epoch \t Seconds \t LR \t Train Loss')
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
@@ -184,23 +148,16 @@ def main():
                 scaled_loss.backward()
             opt.step()
 
-            train_loss += loss.item() * X_1.size(0)
-
-            train_n += X_1.size(0)
+            train_loss += loss.item()
+            train_n += 1
             scheduler.step()
-
-        # Check current test accuracy of model
-        valid_loss, _ = evaluate(valid_loader_1, valid_loader_2, model, criterion)
-
-        if (valid_loss <= prev_valid_loss):
-            torch.save(model.state_dict(), best_model_path)
-            prev_valid_loss = valid_loss
-            best_epoch = epoch
 
         epoch_time = time.time()
         lr = scheduler.get_last_lr()[0]
-        logger.info('%d \t %.1f \t %.4f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, valid_loss)
+        logger.info('%d \t %.1f \t %.4f \t %.4f',
+                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
+
+        wandb.log({"loss": train_loss/train_n})
 
         torch.save(model.state_dict(), last_model_path)
 
@@ -210,31 +167,6 @@ def main():
     train_time = time.time()
 
     logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
-
-    # Evaluation at best model (early stopping)
-    model_test = init_model(args).cuda()
-    model_test.load_state_dict(torch.load(best_model_path))
-    model_test.float()
-    model_test.eval()
-
-    start_test_time = time.time()
-    valid_loss, _ = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
-    total_time = time.time() - start_test_time
-
-    logger.info('Best Epoch \t Valid Loss \t Test Time')
-    logger.info('%d \t %.4f \t %.4f', best_epoch, valid_loss, total_time)
-
-    # Evaluation at last model
-    model_test.load_state_dict(torch.load(last_model_path))
-    model_test.float()
-    model_test.eval()
-
-    start_test_time = time.time()
-    valid_loss, _ = evaluate(valid_loader_1, valid_loader_2, model_test, criterion)
-    total_time = time.time() - start_test_time
-
-    logger.info('Last Epoch \t Valid Loss \t Test Time')
-    logger.info('%d \t %.4f \t %.4f', epoch, valid_loss, total_time)
 
 
 if __name__ == "__main__":
