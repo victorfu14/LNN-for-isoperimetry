@@ -27,13 +27,13 @@ conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train.py --conv-layer soc --block-size 8 --dataset cifar100 --lr-max 0.1 --epochs 1000
+python train.py --conv-layer soc --block-size 8 --dataset cifar100 --lr-max 0.1
 python eval.py --conv-layer soc --block-size 8 --dataset cifar100
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar100 --lr-max 0.1 --epochs 1000
+python train.py --conv-layer soc --block-size 4 --dataset cifar100 --lr-max 0.1
 python eval.py --conv-layer soc --block-size 4 --dataset cifar100
 
-python train.py --conv-layer soc --block-size 2 --dataset cifar100 --lr-max 0.1 --epochs 1000
+python train.py --conv-layer soc --block-size 2 --dataset cifar100 --lr-max 0.1
 python eval.py --conv-layer soc --block-size 2 --dataset cifar100
 
 /bin/hostname

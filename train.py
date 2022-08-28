@@ -66,7 +66,7 @@ def main():
     else:
         raise Exception('Unknown loss')
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=30)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=30, min_lr=args.lr_min, factor=0.6)
 
     wandb.config = {
         "learning_rate": args.lr_max,

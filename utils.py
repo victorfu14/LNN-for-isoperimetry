@@ -43,11 +43,10 @@ def get_args():
     parser.add_argument('--loss', default='l1', choices=['l1', 'l2'], type=str, help='Choose the loss function')
     parser.add_argument('--eval-num', default=100, type=int, help='Number of evaluation samples for each n')
 
-
     # Training specifications
     parser.add_argument('--batch-size', default=500, type=int)
-    parser.add_argument('--epochs', default=200, type=int)
-    parser.add_argument('--lr-min', default=0., type=float)
+    parser.add_argument('--epochs', default=400, type=int)
+    parser.add_argument('--lr-min', default=1e-4, type=float)
     parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--lr-drop', default=200, type=int)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
