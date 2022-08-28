@@ -5,6 +5,8 @@
 - **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
 - **Householder Activations (HH)** improve the performance of deeper networks.
 
+> The project can be found at [here](https://wandb.ai/pbb/iso).
+
 ## TODO
 
 - [x] 🎨 Draw a line plot
