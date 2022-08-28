@@ -66,9 +66,7 @@ def main():
     else:
         raise Exception('Unknown loss')
 
-    lr_steps = args.epochs * len(train_loader_1)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2,
-                                                                      (3 * lr_steps) // 4], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=30)
 
     wandb.config = {
         "learning_rate": args.lr_max,
@@ -87,12 +85,10 @@ def main():
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
-        train_loss = 0
-        train_n = 0
+        train_loss, train_n = 0, 0
 
         for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            X_1, X_2 = X_1[0], X_2[0]
-            X_1, X_2 = X_1.cuda(), X_2.cuda()
+            X_1, X_2 = X_1[0].cuda(), X_2[0].cuda()
             output_1, output_2 = model(X_1), model(X_2)
             loss = criterion(output_1, output_2)
 
@@ -103,17 +99,18 @@ def main():
 
             train_loss += loss.item()
             train_n += 1
-            scheduler.step()
 
         epoch_time = time.time()
-        lr = scheduler.get_last_lr()[0]
-        logger.info('%d \t %.1f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
 
-        wandb.log({"loss": train_loss/train_n, "lr": lr})
+        train_loss /= train_n
+        scheduler.step(train_loss)
+        lr = scheduler._last_lr[0]
+
+        logger.info('%d \t %.1f \t %.4f \t %.4f',
+                    epoch, epoch_time - start_epoch_time, lr, train_loss)
+        wandb.log({"loss": train_loss, "lr": lr})
 
         torch.save(model.state_dict(), last_model_path)
-
         trainer_state_dict = {'epoch': epoch, 'optimizer_state_dict': opt.state_dict()}
         torch.save(trainer_state_dict, last_opt_path)
 

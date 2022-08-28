@@ -19,8 +19,7 @@ def evaluate(loader_1, loader_2, n_eval, num, model, criterion):
 
     with torch.no_grad():
         for i, (X_1, X_2) in enumerate(zip(loader_1, loader_2)):
-            X_1, X_2 = X_1[0], X_2[0]
-            X_1, X_2 = X_1.cuda(), X_2.cuda()
+            X_1, X_2 = X_1[0].cuda(), X_2[0].cuda()
 
             batch_size = num
             weights = torch.ones(n_eval).expand(batch_size, -1)

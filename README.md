@@ -7,13 +7,13 @@
 
 ## TODO
 
-- [ ] 🎨 Draw a line plot
+- [x] 🎨 Draw a line plot
 - [x] 🧪 Implement Validation set partition
 - [x] 🧪 Use Square Root loss
 - [ ] 🧪 Use Gaussian data as a sanity check.
 - [ ] Random $f$
 - [ ] Different Epoch's $f$
-- [ ] Use median
+- [x] Use median
 - [ ] Use linear programming to check
 
 ## Prerequisites

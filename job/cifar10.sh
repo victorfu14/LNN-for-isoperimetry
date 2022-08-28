@@ -16,7 +16,7 @@
 #SBATCH --gres=gpu:1
 
 
-#SBATCH --time=2-00:00:00
+#SBATCH --time=3-00:00:00
 
 #SBATCH --account=vvh0
 
@@ -27,13 +27,13 @@ conda activate iso
 
 cd /home/pbb/Project/ISO/
 
-python train.py --conv-layer soc --block-size 8 --dataset cifar10 --lr-max 0.07 --epochs 2000
+python train.py --conv-layer soc --block-size 8 --dataset cifar10 --lr-max 0.2 --epochs 1000
 python eval.py --conv-layer soc --block-size 8 --dataset cifar10
 
-python train.py --conv-layer soc --block-size 4 --dataset cifar10 --lr-max 0.7 --epochs 2000
+python train.py --conv-layer soc --block-size 4 --dataset cifar10 --lr-max 0.2 --epochs 1000
 python eval.py --conv-layer soc --block-size 4 --dataset cifar10
 
-python train.py --conv-layer soc --block-size 2 --dataset cifar10 --lr-max 0.7 --epochs 2000
+python train.py --conv-layer soc --block-size 2 --dataset cifar10 --lr-max 0.2 --epochs 1000
 python eval.py --conv-layer soc --block-size 2 --dataset cifar10
 
 /bin/hostname
