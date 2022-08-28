@@ -45,9 +45,9 @@ def get_args():
 
     # Training specifications
     parser.add_argument('--batch-size', default=500, type=int)
-    parser.add_argument('--epochs', default=400, type=int)
+    parser.add_argument('--epochs', default=2000, type=int)
     parser.add_argument('--lr-min', default=1e-4, type=float)
-    parser.add_argument('--lr-max', default=0.01, type=float)
+    parser.add_argument('--lr-max', default=0.1, type=float)
     parser.add_argument('--lr-drop', default=200, type=int)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
