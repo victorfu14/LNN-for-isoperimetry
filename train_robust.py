@@ -2,6 +2,7 @@ import argparse
 import copy
 import logging
 import os
+from re import X
 import time
 import math
 from shutil import copyfile
@@ -24,7 +25,8 @@ def get_args():
     parser.add_argument('--sample-size', default=1000, type=int)
     parser.add_argument('--val-size', default=100, type=int)
     parser.add_argument('--eval-only', default=False, type=bool)
-    parser.add_argument('--loss', default='l2', type=str, choices=['l1', 'l2'])
+    parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    parser.add_argument('--eval-set', default='default', type=str, choices=['gaussian', 'default'])
     # parser.add_argument('--test-size', default=1000, type=int)
     
     # Training specifications
@@ -54,7 +56,7 @@ def get_args():
     
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100'], 
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian'], 
                         help='dataset to use for training')
     
     # Other specifications
@@ -69,13 +71,15 @@ def init_model(args):
                        lln=args.lln)
     return model
 
-def eval(test_loader, best_model, last_model, args):
+def eval(dataset, test_loader, best_model, last_model, args):
     best_model_path, best_epoch = best_model
     last_model_path, epoch = last_model
     # Evaluate on different test sample sizes
+    logger.info('Best epoch: {} \t Last epoch: {}'.format(best_epoch, epoch))
+    logger.info('Test sample size \t best_epoch_loss \t last_epoch_loss')
     for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
-        logger.info('Test sample size = %d', test_size)
-        test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
+        # logger.info('Test sample size = %d', test_size)
+        # test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
         # Evaluation at best model (early stopping)
         model_test = init_model(args).cuda()
         model_test.load_state_dict(torch.load(best_model_path))
@@ -83,13 +87,13 @@ def eval(test_loader, best_model, last_model, args):
         model_test.eval()
             
         start_test_time = time.time()
-        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
+        losses_arr = evaluate(dataset, test_loader, model_test, test_size, args.loss)
         total_time = time.time() - start_test_time
         test_loss = np.mean(losses_arr)
         
-        # Log isoperimetric test loss
-        logger.info('Best Epoch \t Test Loss \t Test Time')
-        logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
+        # # Log isoperimetric test loss
+        # logger.info('Best Epoch \t Test Loss \t Test Time')
+        # logger.info('%d \t %.4f \t %.4f', best_epoch, test_loss, total_time)
 
         # Evaluation at last model
         model_test.load_state_dict(torch.load(last_model_path))
@@ -97,12 +101,13 @@ def eval(test_loader, best_model, last_model, args):
         model_test.eval()
 
         start_test_time = time.time()
-        losses_arr = evaluate(test_loader, model_test, test_sample, args.loss)
-        total_time = time.time() - start_test_time
-        test_loss = np.mean(losses_arr)
+        last_losses_arr = evaluate(dataset, test_loader, model_test, test_size, args.loss)
+        last_total_time = time.time() - start_test_time
+        last_test_loss = np.mean(last_losses_arr)
         
-        logger.info('Last Epoch \t Test Loss \t Test Time')
-        logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
+        # logger.info('Last Epoch \t Test Loss \t Test Time')
+        # logger.info('%d \t %.4f \t %.4f', epoch, test_loss, total_time)
+        logger.info('%d \t %.4f \t %.4f$', test_size, test_loss, last_test_loss)
 
 def main():
     args = get_args()
@@ -122,7 +127,13 @@ def main():
     args.out_dir += '_cr' + str(args.gamma)
     if args.lln:
         args.out_dir += '_lln'
+
+    filename = 'output.log'
+    if args.dataset == 'gaussian':
+        args.eval_set = 'gaussian'
     
+    if args.eval_only == True:
+        filename = 'eval_' + filename
     
     os.makedirs(args.out_dir, exist_ok=True)
     code_dir = os.path.join(args.out_dir, 'code')
@@ -133,8 +144,8 @@ def main():
         if os.path.isfile(src):
             if f[-3:] == '.py' or f[-3:] == '.sh':
                 copyfile(src, dst)
-    
-    logfile = os.path.join(args.out_dir, 'output.log')
+
+    logfile = os.path.join(args.out_dir, filename)
     if os.path.exists(logfile):
         os.remove(logfile)
 
@@ -148,13 +159,15 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader_1, train_loader_2, val_loader, test_loader = get_loaders(
+    
+    train_loader_1, train_loader_2, val_loader_1, val_loader_2, test_loader = get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
         train_size = args.sample_size, 
         val_size = args.val_size
     )
+    
     std = cifar10_std if args.dataset == "cifar10" else cifar100_std
 
     # Only need R^d -> R lipschitz functions
@@ -178,11 +191,7 @@ def main():
     if args.opt_level == 'O2':
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
-    criterion = isoLoss(args.loss)
-
-    arr = np.arange(args.val_size * 2)
-    np.random.shuffle(arr)
-    val_sample = np.split(arr, 2)
+    criterion = isoLoss(args.loss) 
 
     lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps // 2, 
@@ -194,7 +203,7 @@ def main():
 
     if args.eval_only == True:
         eval(test_loader, (best_model_path, -1), (last_model_path, -1), args)
-        return    
+        return
     
     # Training
     std = torch.tensor(std).cuda()
@@ -209,8 +218,9 @@ def main():
         start_epoch_time = time.time()
         train_loss = 0
         train_n = 0
-        for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            X_1, X_2 = X_1[0], X_2[0]
+        for _, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
+            if args.dataset != 'gaussian':
+                X_1, X_2 = X_1[0], X_2[0]
             X_1, X_2 = X_1.cuda(), X_2.cuda()
 
             output1, output2 = model(X_1), model(X_2)
@@ -230,9 +240,14 @@ def main():
             train_n += X_1.size(0)
             scheduler.step()
             
+        losses_list = [] 
         # Check current model on validation set
-        losses_arr = evaluate(val_loader, model, val_sample, args.loss)
-        val_loss = np.mean(losses_arr)
+        for _, (X_1, X_2) in enumerate(zip(val_loader_1, val_loader_2)):
+            if args.dataset != 'gaussian':
+                X_1, X_2 = X_1[0], X_2[0]
+            X_1, X_2 = X_1.cuda(), X_2.cuda()
+            losses_list.append(criterion(X_1, X_2).cpu().numpy())
+        val_loss = np.mean(losses_list)
 
         if args.loss == 'l1':
             val_loss = -np.abs(val_loss)
@@ -259,7 +274,7 @@ def main():
 
     logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
     
-    eval(test_loader, (best_model_path, best_epoch), (last_model_path, epoch), args)
+    eval(args.dataset, test_loader, (best_model_path, best_epoch), (last_model_path, epoch), args)
 
 if __name__ == "__main__":
     main()

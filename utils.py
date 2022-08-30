@@ -1,3 +1,4 @@
+from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +18,7 @@ std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
 
-def isoLossEval(output1, output2, subsample_size=10, subsample=None, randomize=True, type='l2'):
+def isoLossEval(output1, output2, subsample_size=10, subsample=None, randomize=True, type='l1'):
     power = 2 if type == 'l2' else 1
     if randomize == False:
         return -torch.mean(output1 - output2) ** power
@@ -35,13 +36,69 @@ class isoLoss(nn.Module):
         self.loss = loss
     
     def forward(self, output1, output2):
-            return isoLossEval(output1, output2, type=self.loss, randomize=False)
+        return isoLossEval(output1, output2, type=self.loss, randomize=False)
 
 
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-def get_loaders(dir_, batch_size=None, dataset_name='cifar10', normalize=True, train_size=10000, val_size=1000):
+def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, val_size=1000):
+    if dataset_name == 'gaussian':
+        x_1 = np.random.multivariate_normal(mean=np.zeros(3*32*32),
+                            cov=np.identity(3*32*32),
+                            size=train_size)
+        x_2 = np.random.multivariate_normal(mean=np.zeros(3*32*32),
+                            cov=np.identity(3*32*32),
+                            size=train_size)
+        train_set_1 = torch.reshape(torch.tensor(x_1), (train_size, 3, 32, 32))
+        train_set_2 = torch.reshape(torch.tensor(x_2), (train_size, 3, 32, 32))
+        train_loader_1 = torch.utils.data.DataLoader(
+            dataset=train_set_1,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        train_loader_2 = torch.utils.data.DataLoader(
+            dataset=train_set_2,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        val_1 = np.random.multivariate_normal(mean=np.zeros(3*32*32),
+                            cov=np.identity(3*32*32),
+                            size=val_size)
+        val_2 = np.random.multivariate_normal(mean=np.zeros(3*32*32),
+                            cov=np.identity(3*32*32),
+                            size=val_size)
+        val_loader_1 = torch.utils.data.DataLoader(
+            dataset=torch.reshape(torch.tensor(val_1), (val_size, 3, 32, 32)),
+            batch_size=val_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        val_loader_2 = torch.utils.data.DataLoader(
+            dataset=torch.reshape(torch.tensor(val_2), (val_size, 3, 32, 32)),
+            batch_size=val_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        x = np.random.multivariate_normal(mean=np.zeros(3*32*32),
+                            cov=np.identity(3*32*32),
+                            size=20000)
+        test = torch.reshape(torch.tensor(x), (20000, 3, 32, 32))
+        test_loader = torch.utils.data.DataLoader(
+            dataset=test,
+            batch_size=20000,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=2,
+        )
+        return train_loader_1, train_loader_2, val_loader_1, val_loader_2, test_loader
+
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean
@@ -80,8 +137,10 @@ def get_loaders(dir_, batch_size=None, dataset_name='cifar10', normalize=True, t
 
     total_len = len(train_dataset.data) + len(test_dataset.data)
 
-    train_dataset_1, train_dataset_2, val_dataset, test_dataset = torch.utils.data.random_split(
-        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), [train_size, train_size, val_size * 2, total_len - 2 * (train_size + val_size)])
+    train_dataset_1, train_dataset_2, val_dataset_1, val_dataset_2, test_dataset = torch.utils.data.random_split(
+        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), 
+        [train_size, train_size, val_size, val_size, total_len - 2 * (train_size + val_size)]
+    )
 
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_dataset_1,
@@ -97,8 +156,15 @@ def get_loaders(dir_, batch_size=None, dataset_name='cifar10', normalize=True, t
         pin_memory=True,
         num_workers=num_workers,
     )
-    val_loader = torch.utils.data.DataLoader(
-        dataset=val_dataset,
+    val_loader_1 = torch.utils.data.DataLoader(
+        dataset=val_dataset_1,
+        batch_size=val_size*2,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
+    val_loader_2 = torch.utils.data.DataLoader(
+        dataset=val_dataset_2,
         batch_size=val_size*2,
         shuffle=True,
         pin_memory=True,
@@ -111,14 +177,18 @@ def get_loaders(dir_, batch_size=None, dataset_name='cifar10', normalize=True, t
         pin_memory=True,
         num_workers=2,
     )
-    return train_loader_1, train_loader_2, val_loader, test_loader
+    return train_loader_1, train_loader_2, val_loader_1, val_loader_2, test_loader
 
-def evaluate(data_loader, model, sample, loss='l2'):
+def evaluate(dataset, data_loader, model, size, loss='l1'):
     losses_list = []
     model.eval()
 
+    sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
+
     with torch.no_grad():
-        for i, (X, _) in enumerate(data_loader):
+        for i, X in enumerate(data_loader):
+            if dataset != 'gaussian':
+                X = X[0]
             X = X.cuda() 
             output1 = model(X[sample[0]])
             output2 = model(X[sample[1]])
