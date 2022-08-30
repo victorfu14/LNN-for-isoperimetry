@@ -5,3 +5,6 @@ LipConvnet*/
 LNNIso*/
 .vscode/
 *.sh
+job/
+logs/
+ISO*/
