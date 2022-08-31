@@ -68,7 +68,7 @@ def get_synthetic_loaders(batch_size, dataset_name='gaussian', dim=[3, 32, 32],t
             cov=np.identity(total_dim),
             size=test_size
         )
-    test = torch.reshape(torch.tensor(x), [test_size] + total_dim)
+    test = torch.reshape(torch.tensor(x), [test_size] + dim)
     test_loader = torch.utils.data.DataLoader(
         dataset=test,
         batch_size=test_size,
@@ -145,16 +145,16 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
     )
     return train_loader_1, train_loader_2, test_loader
 
-def random_evaluate(dataset, data_loader, model, size, num_sample, loss='l1'):
+def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
     losses_list = []
     model.eval()
 
-    for _ in num_sample:
+    for _ in range(num_sample):
         sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
 
         with torch.no_grad():
             for i, X in enumerate(data_loader):
-                if dataset != 'gaussian':
+                if synthetic == False:
                     X = X[0]
                 X = X.cuda() 
                 output1 = model(X[sample[0]])

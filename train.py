@@ -57,7 +57,7 @@ def get_args():
 
     # Other specifications
     parser.add_argument('--epsilon', default=36, type=int)
-    parser.add_argument('--out-dir', default='ISO', type=str, help='Output directory')
+    parser.add_argument('--out-dir', default='LNNIso', type=str, help='Output directory')
     parser.add_argument('--workers', default=4, type=int, help='Number of workers used in data-loading')
     parser.add_argument('--seed', default=0, type=int, help='Random seed')
     return parser.parse_args()
@@ -94,7 +94,7 @@ def eval(args, epoch, model_path, test_loader, logger):
         model_test.eval()
             
         start_test_time = time.time()
-        losses_arr = random_evaluate(test_loader, model_test, test_size, 1000, args.loss)
+        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 1000, args.loss)
         total_time = time.time() - start_test_time
         test_loss = np.mean(losses_arr)
         histogram = wandb.plot.histogram(wandb.Table(
@@ -114,7 +114,7 @@ def main():
     else:
         args.out_dir += '_' + str(args.dataset)
 
-    args.out_dir += '_train_size=' + str(args.sample_size)
+    args.out_dir += '_train_size=' + str(args.train_size)
     # args.out_dir += '_val_size=' + str(args.val_size)
     args.out_dir += '_loss=' + str(args.loss)
     args.out_dir += '_mom=' + str(args.momentum)
@@ -122,7 +122,6 @@ def main():
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
     args.out_dir += '_' + str(args.activation)
-    args.out_dir += '_cr' + str(args.gamma)
     if args.lln:
         args.out_dir += '_lln'
 
@@ -158,8 +157,8 @@ def main():
 
     if args.synthetic:
         train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
-            batch_size=args.batch_size
-            dataset=args.syn_data,
+            batch_size=args.batch_size,
+            dataset_name=args.syn_data,
             dim=[3, 32, 32],
             train_size=args.train_size,
             test_size=40000
@@ -177,7 +176,6 @@ def main():
     # Only need R^d -> R lipschitz functions
     args.num_classes = 1
 
-    # Evaluation at early stopping
     model = init_model(args).cuda()
     model.train()
 
@@ -208,6 +206,7 @@ def main():
     # Training
     start_train_time = time.time()
 
+    wandb.init(project="isoperimetry")
     wandb.config = {
         "learning_rate": args.lr_max,
         "epochs": args.epochs,
@@ -223,7 +222,7 @@ def main():
         train_n = 0
 
         for _, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            if args.synthetic != 'gaussian':
+            if args.synthetic == False:
                 X_1, X_2 = X_1[0], X_2[0]
 
             X_1, X_2 = X_1.cuda(), X_2.cuda()
@@ -251,9 +250,10 @@ def main():
                     epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
         
         wandb.log({"loss": train_loss, "lr": lr})
+        wandb.watch(model)
 
         if epoch % 50 == 0:
-            model_path = os.path.join(args.out_dir + 'epoch' + str(epoch) + '.pth')
+            model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
             torch.save(model.state_dict(), model_path)
             eval(args, epoch, model_path, test_loader, eval_logger)
 
