@@ -47,8 +47,8 @@ def get_synthetic_loaders(batch_size, dataset_name='gaussian', dim=[3, 32, 32],t
             cov=np.identity(total_dim),
             size=train_size
         )
-    train_set_1 = torch.reshape(torch.tensor(x_1), [train_size] + dim)
-    train_set_2 = torch.reshape(torch.tensor(x_2), [train_size] + dim)
+    train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
+    train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_set_1,
         batch_size=batch_size,
@@ -68,7 +68,7 @@ def get_synthetic_loaders(batch_size, dataset_name='gaussian', dim=[3, 32, 32],t
             cov=np.identity(total_dim),
             size=test_size
         )
-    test = torch.reshape(torch.tensor(x), [test_size] + dim)
+    test = torch.reshape(torch.tensor(x).float(), [test_size] + dim)
     test_loader = torch.utils.data.DataLoader(
         dataset=test,
         batch_size=test_size,
@@ -153,10 +153,10 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
         sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
 
         with torch.no_grad():
-            for i, X in enumerate(data_loader):
+            for _, X in enumerate(data_loader):
                 if synthetic == False:
                     X = X[0]
-                X = X.cuda() 
+                X = X.cuda().float()
                 output1 = model(X[sample[0]])
                 output2 = model(X[sample[1]])
                 loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss, randomize=False).cpu().numpy()]))

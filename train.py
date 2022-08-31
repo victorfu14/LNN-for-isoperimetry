@@ -16,7 +16,7 @@ from apex import amp
 from lip_convnets import LipConvNet
 from utils import *
 
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+formatter = logging.Formatter('%(message)s')
 
 def get_args():
     parser = argparse.ArgumentParser()
