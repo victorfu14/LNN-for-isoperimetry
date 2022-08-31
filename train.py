@@ -1,6 +1,7 @@
 import argparse
 import copy
 import logging
+from multiprocessing.util import get_logger
 import os
 import time
 import math
@@ -80,8 +81,9 @@ def init_model(args):
                        lln=args.lln)
     return model
 
-def eval(args, epoch, model_path, test_loader, logger):
+def eval(args, epoch, model_path, test_loader):
     # Evaluate on different test sample sizes
+    logger = get_logger('eval_logger')
     logger.info('Epoch : {}'.format(epoch))
     logger.info('Test sample size \t Avg test loss \t Total time')
     for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
@@ -144,7 +146,7 @@ def main():
         os.remove(eval_logfile)
 
     train_logger = setup_logger('train_logger', train_logfile)
-    eval_logger = setup_logger('train_logger', eval_logfile)
+    eval_logger = setup_logger('eval_logger', eval_logfile)
     
     train_logger.info(args)
     eval_logger.info(args)
@@ -255,7 +257,7 @@ def main():
         if epoch % 50 == 0:
             model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
             torch.save(model.state_dict(), model_path)
-            eval(args, epoch, model_path, test_loader, eval_logger)
+            eval(args, epoch, model_path, test_loader)
 
         torch.save(model.state_dict(), last_model_path)
 

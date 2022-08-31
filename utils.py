@@ -159,7 +159,7 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
                 X = X.cuda().float()
                 output1 = model(X[sample[0]])
                 output2 = model(X[sample[1]])
-                loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss, randomize=False).cpu().numpy()]))
+                loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss).cpu().numpy()]))
                 losses_list.append(loss)
                     
             losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
