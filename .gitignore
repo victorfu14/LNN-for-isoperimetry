@@ -9,3 +9,4 @@ job/
 logs/
 ISO*/
 wandb/
+temp/

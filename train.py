@@ -19,6 +19,8 @@ from utils import *
 
 formatter = logging.Formatter('%(message)s')
 
+test_size_list = [50, 100, 250, 500, 1000, 5000, 8000, 10000]
+
 def get_args():
     parser = argparse.ArgumentParser()
 
@@ -26,11 +28,12 @@ def get_args():
     parser.add_argument('--train-size', default=1000, type=int)
     parser.add_argument('--val-size', default=1000, type=int)
     parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    parser.add_argument('--eval-only', default=False, type=bool)
     parser.add_argument('--synthetic', default=False, type=bool)
     parser.add_argument('--syn-data', default='gaussian', type=str, choices=['gaussian'])
 
     # Training specifications
-    parser.add_argument('--batch-size', default=500, type=int)
+    parser.add_argument('--batch-size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--lr-min', default=0., type=float)
     parser.add_argument('--lr-max', default=0.01, type=float)
@@ -83,10 +86,11 @@ def init_model(args):
 
 def eval(args, epoch, model_path, test_loader):
     # Evaluate on different test sample sizes
-    logger = get_logger('eval_logger')
+    logger = logging.getLogger('eval_logger')
     logger.info('Epoch : {}'.format(epoch))
     logger.info('Test sample size \t Avg test loss \t Total time')
-    for test_size in [50, 100, 250, 500, 1000, 5000, 8000, 10000]:
+    loss = {}
+    for test_size in test_size_list:
         # logger.info('Test sample size = %d', test_size)
         # test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
         # Evaluation at best model (early stopping)
@@ -96,18 +100,22 @@ def eval(args, epoch, model_path, test_loader):
         model_test.eval()
             
         start_test_time = time.time()
-        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 1000, args.loss)
+        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 100, args.loss)
         total_time = time.time() - start_test_time
         test_loss = np.mean(losses_arr)
-        histogram = wandb.plot.histogram(wandb.Table(
-            data=losses_arr, columns=["step", "loss"]), value='loss', title='n={}'.format(test_size))
-        wandb.log({'n={}'.format(test_size): histogram})
+        loss[test_size] = [[val, epoch] for val in losses_arr]
         
         logger.info('%d \t %.4f \t %.4f', test_size, test_loss, total_time)
+    
+    return loss
 
 
 def main():
     args = get_args()
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
@@ -118,15 +126,65 @@ def main():
 
     args.out_dir += '_train_size=' + str(args.train_size)
     # args.out_dir += '_val_size=' + str(args.val_size)
-    args.out_dir += '_loss=' + str(args.loss)
-    args.out_dir += '_mom=' + str(args.momentum)
-    args.out_dir += '_' + str(args.block_size) 
+    # args.out_dir += '_loss=' + str(args.loss)
+    # args.out_dir += '_mom=' + str(args.momentum)
+    args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.conv_layer)
     args.out_dir += '_' + str(args.init_channels)
     args.out_dir += '_' + str(args.activation)
     if args.lln:
         args.out_dir += '_lln'
 
+    args.num_classes = 1
+
+    wandb.init(project="isoperimetry", name=args.out_dir)
+    wandb.config = {
+        "learning_rate": args.lr_max,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size
+    }
+
+    if args.eval_only:
+        if args.synthetic:
+            train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
+                batch_size=args.batch_size,
+                dataset_name=args.syn_data,
+                dim=[3, 32, 32],
+                train_size=args.train_size,
+                test_size=40000
+            )
+        else:
+            train_loader_1, train_loader_2, test_loader = get_loaders(
+                args.data_dir, 
+                args.batch_size, 
+                args.dataset,
+                train_size = args.sample_size, 
+            )
+
+        eval_logfile = os.path.join(args.out_dir, 'eval.log')
+        if os.path.exists(eval_logfile):
+            os.remove(eval_logfile)
+        eval_logger = setup_logger('eval_logger', eval_logfile)
+        eval_logger.info(args)
+
+        loss = {}
+        for i in test_size_list:
+            loss[i] = []
+        for epoch in range(0, args.epochs, 100):
+            model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
+            loss_this_epoch = eval(args, epoch, model_path, test_loader)
+            for test_size in loss_this_epoch:
+                loss[test_size] += loss_this_epoch[test_size]
+                table = wandb.Table(data=loss[test_size], columns=['loss', 'epoch'])
+                wandb.log({'n={}'.format(test_size): table})
+        
+        loss_last = eval(args, args.epochs-1, model_path, test_loader)
+        for test_size in loss_last:
+            loss[test_size] += loss_last[test_size]
+            table = wandb.Table(data=loss[test_size], columns=['loss', 'epoch'])
+            wandb.log({'n={}'.format(test_size): table})
+        return
+        
     os.makedirs(args.out_dir, exist_ok=True)
     code_dir = os.path.join(args.out_dir, 'code')
     os.makedirs(code_dir, exist_ok=True)
@@ -137,25 +195,21 @@ def main():
             if f[-3:] == '.py' or f[-3:] == '.sh':
                 copyfile(src, dst)
 
+
     train_logfile = os.path.join(args.out_dir, 'train.log')
     if os.path.exists(train_logfile):
         os.remove(train_logfile)
     
     eval_logfile = os.path.join(args.out_dir, 'eval.log')
-    if os.path.exists(train_logfile):
+    if os.path.exists(eval_logfile):
         os.remove(eval_logfile)
 
     train_logger = setup_logger('train_logger', train_logfile)
-    eval_logger = setup_logger('eval_logger', eval_logfile)
-    
     train_logger.info(args)
+
+    eval_logger = setup_logger('eval_logger', eval_logfile)
     eval_logger.info(args)
 
-    args.num_classes = 1
-
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
 
     if args.synthetic:
         train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
@@ -200,21 +254,14 @@ def main():
 
     lr_steps = args.epochs * len(train_loader_1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4], gamma=0.1)
+        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
 
     # Training
     start_train_time = time.time()
-
-    wandb.init(project="isoperimetry")
-    wandb.config = {
-        "learning_rate": args.lr_max,
-        "epochs": args.epochs,
-        "batch_size": args.batch_size
-    }
-
     
     train_logger.info('Epoch \t Seconds \t LR \t Train Loss')
     for epoch in range(args.epochs):
@@ -247,9 +294,12 @@ def main():
             scheduler.step()
 
         epoch_time = time.time()
+        train_loss /= train_n
+        # scheduler.step(train_loss)
+        # lr = scheduler._last_lr[0]
         lr = scheduler.get_last_lr()[0]
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss/train_n)
+                    epoch, epoch_time - start_epoch_time, lr, train_loss)
         
         wandb.log({"loss": train_loss, "lr": lr})
         wandb.watch(model)
@@ -257,7 +307,7 @@ def main():
         if epoch % 50 == 0:
             model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
             torch.save(model.state_dict(), model_path)
-            eval(args, epoch, model_path, test_loader)
+            # eval(args, epoch, model_path, test_loader)
 
         torch.save(model.state_dict(), last_model_path)
 
@@ -267,6 +317,24 @@ def main():
     train_time = time.time()
 
     train_logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
+
+    loss = {}
+    for i in test_size_list:
+        loss[i] = []
+    for epoch in range(0, args.epochs, 100):
+        model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
+        loss_this_epoch = eval(args, epoch, model_path, test_loader)
+        for test_size in loss_this_epoch:
+            loss[test_size] += loss_this_epoch[test_size]
+            table = wandb.Table(data=loss[test_size], columns=['loss', 'epoch'])
+            wandb.log({'n={}'.format(test_size): table})
+    
+    loss_last = eval(args, args.epochs-1, model_path, test_loader)
+    for test_size in loss_last:
+        loss[test_size] += loss_last[test_size]
+        table = wandb.Table(data=loss[test_size], columns=['loss', 'epoch'])
+        wandb.log({'n={}'.format(test_size): table})
+    return
 
 if __name__ == "__main__":
     main()
