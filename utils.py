@@ -44,8 +44,8 @@ def get_args():
     parser.add_argument('--eval-num', default=100, type=int, help='Number of evaluation samples for each n')
 
     # Training specifications
-    parser.add_argument('--batch-size', default=500, type=int)
-    parser.add_argument('--epochs', default=400, type=int)
+    parser.add_argument('--batch-size', default=200, type=int)
+    parser.add_argument('--epochs', default=500, type=int)
     parser.add_argument('--lr-min', default=1e-4, type=float)
     parser.add_argument('--lr-max', default=0.1, type=float)
     parser.add_argument('--lr-drop', default=200, type=int)
@@ -123,7 +123,6 @@ def init_log(args, log_name='output.log'):
     args.out_dir += '_' + str(args.activation)
     if args.lln:
         args.out_dir += '_lln'
-
     os.makedirs(args.out_dir, exist_ok=True)
     code_dir = os.path.join(args.out_dir, 'code')
     os.makedirs(code_dir, exist_ok=True)

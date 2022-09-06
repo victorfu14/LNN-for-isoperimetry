@@ -32,10 +32,11 @@ def main():
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     init_log(args, log_name='output.log')
-    wandb.init(project="iso", entity="pbb", name=args.dataset+" b={}".format(args.block_size))
-    logger.info(args)
     args.num_classes = 1
     assert args.n == 15000 and args.n % args.batch_size == 0, 'n must be 15000 and divisible by batch size'
+
+    wandb.init(project="iso", entity="pbb", name=args.dataset+" b={}".format(args.block_size))
+    logger.info(args)
 
     init_random(args.seed)
     train_loader_1, train_loader_2, _, _ = get_loaders(
@@ -74,12 +75,14 @@ def main():
         "batch_size": args.batch_size
     }
 
-    last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
 
     # Training
     start_train_time = time.time()
 
+    # eval on every 100 iteration
+    eval_iter = [100 * i for i in range(args.epochs//100 + 1)]
+    
     # only need train and test loss
     logger.info('Epoch \t Seconds \t LR \t Train Loss')
     for epoch in range(args.epochs):
@@ -88,6 +91,9 @@ def main():
         train_loss, train_n = 0, 0
 
         for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
+            if i in eval_iter:
+                torch.save(model.state_dict(), os.path.join(args.out_dir, 'iter_{}.pth'.format(i)))
+                
             X_1, X_2 = X_1[0].cuda(), X_2[0].cuda()
             output_1, output_2 = model(X_1), model(X_2)
             loss = criterion(output_1, output_2)
@@ -110,7 +116,6 @@ def main():
                     epoch, epoch_time - start_epoch_time, lr, train_loss)
         wandb.log({"loss": train_loss, "lr": lr})
 
-        torch.save(model.state_dict(), last_model_path)
         trainer_state_dict = {'epoch': epoch, 'optimizer_state_dict': opt.state_dict()}
         torch.save(trainer_state_dict, last_opt_path)
 
