@@ -33,20 +33,18 @@ class isoLoss(nn.Module):
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-def get_synthetic_loaders(batch_size, dataset_name='gaussian', dim=[3, 32, 32],train_size=10000, test_size=40000):
-    if dataset_name == 'gaussian':
-        generate = np.random.multivariate_normal
+def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32],train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
     x_1 = generate(
-            mean=np.zeros(np.prod(total_dim)),
-            cov=np.identity(np.prod(total_dim)),
-            size=train_size
-        )
+        mean=np.zeros(np.prod(total_dim)),
+        cov=np.identity(np.prod(total_dim)),
+        size=train_size
+    )
     x_2 = generate(
-            mean=np.zeros(total_dim),
-            cov=np.identity(total_dim),
-            size=train_size
-        )
+        mean=np.zeros(total_dim),
+        cov=np.identity(total_dim),
+        size=train_size
+    )
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
     train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
     train_loader_1 = torch.utils.data.DataLoader(
@@ -63,19 +61,20 @@ def get_synthetic_loaders(batch_size, dataset_name='gaussian', dim=[3, 32, 32],t
         pin_memory=True,
         num_workers=2,
     )
-    x = generate(
-            mean=np.zeros(total_dim),
-            cov=np.identity(total_dim),
-            size=test_size
-        )
-    test = torch.reshape(torch.tensor(x).float(), [test_size] + dim)
+    test = generate(
+        mean=np.zeros(total_dim),
+        cov=np.identity(total_dim),
+        size=test_size
+    )
+    test_set = torch.reshape(torch.tensor(test).float(), [test_size] + dim)
     test_loader = torch.utils.data.DataLoader(
-        dataset=test,
+        dataset=test_set,
         batch_size=test_size,
         shuffle=True,
         pin_memory=True,
         num_workers=2,
     )
+    
     return train_loader_1, train_loader_2, test_loader
 
 def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000):
@@ -163,6 +162,37 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
                 losses_list.append(loss)
                     
             losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
+
+    return losses_array
+
+def random_evaluate_synthetic(model, size, num_samples, func, dim, loss='l1'):
+    losses_list = []
+    model.eval()
+    total_dim = np.prod(dim)
+
+    for _ in range(num_samples):
+        sample_1 = func(
+            mean=np.zeros(np.prod(total_dim)),
+            cov=np.identity(np.prod(total_dim)),
+            size=size
+        )
+        sample_1 = torch.reshape(torch.tensor(sample_1).float(), [size] + dim)
+        sample_2 = func(
+            mean=np.zeros(np.prod(total_dim)),
+            cov=np.identity(np.prod(total_dim)),
+            size=size
+        )
+        sample_2 = torch.reshape(torch.tensor(sample_2).float(), [size] + dim)
+
+        with torch.no_grad():
+            sample_1 = sample_1.cuda()
+            sample_2 = sample_2.cuda()
+            output1 = model(sample_1)
+            output2 = model(sample_2)
+            loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss).cpu().numpy()]))
+            losses_list.append(loss)
+                
+        losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
 
     return losses_array
 

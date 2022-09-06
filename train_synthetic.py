@@ -1,4 +1,5 @@
 import argparse
+from ast import arg
 import copy
 import logging
 from multiprocessing.util import get_logger
@@ -31,14 +32,14 @@ def get_args():
     parser.add_argument('--val-size', default=1000, type=int)
     parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
     parser.add_argument('--eval-only', default=False, type=bool)
-    parser.add_argument('--synthetic', default=False, type=bool)
+    # parser.add_argument('--synthetic', default=False, type=bool)
     parser.add_argument('--syn-data', default='gaussian', type=str, choices=['gaussian'])
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--lr-min', default=0., type=float)
-    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
@@ -90,19 +91,16 @@ def eval(args, epoch, model_path, test_loader):
     # Evaluate on different test sample sizes
     logger = logging.getLogger('eval_logger')
     logger.info('Epoch : {}'.format(epoch))
-    logger.info('Test sample size \t Avg test loss \t Total time')
+    logger.info('Test sample size \t Avg abs test loss \t Total time')
     loss = {}
     for test_size in test_size_list:
-        # logger.info('Test sample size = %d', test_size)
-        # test_sample = np.split(np.random.choice(len(test_loader.dataset), size=test_size*2, replace=False), 2)
-        # Evaluation at best model (early stopping)
         model_test = init_model(args).cuda()
         model_test.load_state_dict(torch.load(model_path))
         model_test.float()
         model_test.eval()
             
         start_test_time = time.time()
-        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 50, args.loss)
+        losses_arr = random_evaluate(test_loader, model_test, test_size, 50, args.loss)
         total_time = time.time() - start_test_time
         test_loss = np.mean(np.abs(losses_arr))
         loss[test_size] = [[val, epoch] for val in losses_arr]
@@ -120,12 +118,12 @@ def evaluate_model(args, test_loader):
 
     loss = {}
     mean_loss_aggregate = []
-    epoch_list = [i for i in range(1, args.epochs, 100)] + [args.epochs]
+    epoch_list = [i for i in range(1, args.epochs, 100)] + args.epochs
     for i in test_size_list:
         loss[i] = []
     for epoch in epoch_list:
         mean_loss = []
-        model_path = os.path.join(args.out_dir, 'last.pth') if epoch == args.epochs else os.path.join(args.out_dir, 'epoch' + str(epoch - 1) + '.pth')
+        model_path = os.path.join(args.out_dir, 'last.pth') if epoch == args.epochs else os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
         loss_this_epoch = eval(args, epoch, model_path, test_loader)
         for test_size in loss_this_epoch:
             loss[test_size] += loss_this_epoch[test_size]
@@ -136,7 +134,7 @@ def evaluate_model(args, test_loader):
             wandb.log({'n={}'.format(test_size): table})
 
         # regression
-        X = 1 / np.sqrt([[size] for size in np.transpose(mean_loss)[1]])
+        X = np.sqrt([[val] for val in np.transpose(mean_loss)[1]])
         y = np.transpose(mean_loss)[0]
 
         reg = LinearRegression(fit_intercept=False).fit(X, y)
@@ -149,6 +147,7 @@ def evaluate_model(args, test_loader):
 
     return
 
+
 def main():
     args = get_args()
     np.random.seed(args.seed)
@@ -158,18 +157,7 @@ def main():
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
-    if args.synthetic:
-        args.out_dir += '_' + str(args.syn_data)
-        run_name=str(args.syn_data) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
-        if args.syn_data == 'gaussian':
-            args.syn_func = np.random.multivariate_normal 
-        else:
-            raise ValueError('Unknown synthetic dataset')
-    else:
-        args.out_dir += '_' + str(args.dataset)
-        run_name=str(args.dataset) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
-    
-
+    args.out_dir += '_' + str(args.syn_data)
     args.out_dir += '_train_size=' + str(args.train_size)
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
@@ -178,24 +166,25 @@ def main():
         args.out_dir += '_lln'
 
     args.num_classes = 1
+    args.dim = [3, 32, 32]
 
     wandb.init(
         project='isoperimetry', 
-        name=run_name
+        name=str(args.syn_data) + ' train_size=' + str(args.train_size) + ' block=' 
+            + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
     )
     wandb.config = {
-        'learning_rate': args.lr_max,
-        'epochs': args.epochs,
-        'batch_size': args.batch_size
+        "learning_rate": args.lr_max,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size
     }
 
-    
-    train_loader_1, train_loader_2, test_loader = get_loaders(
-        args.data_dir, 
-        args.batch_size, 
-        args.dataset, 
-        train_size = args.train_size, 
-    ) if args.synthetic == False else get_synthetic_loaders(
+    if args.syn_data == 'gaussian':
+        args.syn_func = np.random.multivariate_normal 
+    else:
+        raise ValueError('Unknown synthetic dataset')
+
+    train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,
         dim=[3, 32, 32],
@@ -249,9 +238,9 @@ def main():
 
     criterion = isoLoss(args.loss)
 
-    lr_steps = args.epochs
+    lr_steps = args.epochs * len(train_loader_1)
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(
-    #     opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
+        # opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
@@ -261,6 +250,8 @@ def main():
     start_train_time = time.time()
     
     train_logger.info('Epoch \t Seconds \t LR \t Train Loss')
+    model_path = os.path.join(args.out_dir, 'epoch' + str(0) + '.pth')
+    torch.save(model.state_dict(), model_path)
     for epoch in range(args.epochs):
         model.train()
         start_epoch_time = time.time()
@@ -268,9 +259,6 @@ def main():
         train_n = 0
 
         for _, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            if args.synthetic == False:
-                X_1, X_2 = X_1[0], X_2[0]
-
             X_1, X_2 = X_1.cuda(), X_2.cuda()
 
             output1, output2 = model(X_1), model(X_2)
@@ -288,18 +276,13 @@ def main():
             else:
                 train_loss += -torch.sqrt(-ce_loss) * X_1.size(0)
             train_n += X_1.size(0)
+            # scheduler.step()
 
         epoch_time = time.time()
         train_loss /= train_n
-
-        # reduce on plateau scheduler
         scheduler.step(train_loss)
         lr = scheduler._last_lr[0]
-
-        # multistep scheduler
-        # scheduler.step()
         # lr = scheduler.get_last_lr()[0]
-
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss)
         
@@ -315,13 +298,13 @@ def main():
 
         trainer_state_dict = {'epoch': epoch, 'optimizer_state_dict': opt.state_dict()}
         torch.save(trainer_state_dict, last_opt_path)
-
+    
     train_time = time.time()
 
     train_logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
 
     evaluate_model(args, test_loader)
-
+        
     return
 
 if __name__ == "__main__":
