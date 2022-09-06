@@ -89,11 +89,9 @@ def main():
         model.train()
         start_epoch_time = time.time()
         train_loss, train_n = 0, 0
-
-        for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            if i in eval_iter:
-                torch.save(model.state_dict(), os.path.join(args.out_dir, 'iter_{}.pth'.format(i)))
-                
+        if epoch in eval_iter:
+                torch.save(model.state_dict(), os.path.join(args.out_dir, 'iter_{}.pth'.format(epoch)))
+        for i, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):    
             X_1, X_2 = X_1[0].cuda(), X_2[0].cuda()
             output_1, output_2 = model(X_1), model(X_2)
             loss = criterion(output_1, output_2)
