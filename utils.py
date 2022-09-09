@@ -1,7 +1,4 @@
-from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
-from skew_ortho_conv import SOC
-from block_ortho_conv import BCOP
-from cayley_ortho_conv import Cayley, CayleyLinear
+from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +6,9 @@ from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import math
+import logging
+import argparse
+from lip_convnets import LipConvNet
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -18,25 +18,161 @@ cifar100_std = (0.2675, 0.2565, 0.2761)
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 
-upper_limit = ((1 - mu) / std)
-lower_limit = ((0 - mu) / std)
+upper_limit = ((1 - mu)/ std)
+lower_limit = ((0 - mu)/ std)
 
+formatter = logging.Formatter('%(message)s')
 
-def init_random(seed):
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+def setup_logger(name, log_file, level=logging.INFO):
+    """To setup as many loggers as you want"""
+
+    handler = logging.FileHandler(log_file)        
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
+
+def get_args():
+    parser = argparse.ArgumentParser()
+
+    # isoperimetry arguments
+    parser.add_argument('--train-size', default=10000, type=int)
+    parser.add_argument('--val-size', default=1000, type=int)
+    parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    parser.add_argument('--eval-only', default=False, type=bool)
+    parser.add_argument('--synthetic', default=False, type=bool)
+    parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
+
+    # Training specifications
+    parser.add_argument('--batch-size', default=128, type=int)
+    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--lr-min', default=0., type=float)
+    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--weight-decay', default=5e-4, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
+                        help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
+    parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
+                        help='If loss_scale is "dynamic", adaptively adjust the loss scale over time')
+
+    # Model architecture specifications
+    parser.add_argument('--conv-layer', default='soc', type=str, choices=['bcop', 'cayley', 'soc'],
+                        help='BCOP, Cayley, SOC convolution')
+    parser.add_argument('--init-channels', default=32, type=int)
+    parser.add_argument('--activation', default='maxmin', choices=['maxmin', 'hh1', 'hh2'],
+                        help='Activation function')
+    parser.add_argument('--block-size', default=2, type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8],
+                        help='size of each block')
+    parser.add_argument('--lln', action='store_true', help='set last linear to be linear and normalized')
+
+    # Dataset specifications
+    parser.add_argument('--data-dir', default='./cifar-data', type=str)
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100'],
+                        help='dataset to use for training')
+
+    # Other specifications
+    parser.add_argument('--epsilon', default=36, type=int)
+    parser.add_argument('--out-dir', default='LNNIso', type=str, help='Output directory')
+    parser.add_argument('--workers', default=4, type=int, help='Number of workers used in data-loading')
+    parser.add_argument('--seed', default=0, type=int, help='Random seed')
+    return parser.parse_args()
+
+def process_args(args):
+    if args.conv_layer == 'cayley' and args.opt_level == 'O2':
+        raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
+
+    if args.synthetic:
+        args.out_dir += '_' + str(args.syn_data)
+        args.run_name=str(args.syn_data) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
+        if args.syn_data == 'gaussian':
+            args.syn_func = np.random.multivariate_normal 
+        else:
+            raise ValueError('Unknown synthetic dataset')
+    else:
+        args.out_dir += '_' + str(args.dataset)
+        args.run_name=str(args.dataset) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
     
+
+    args.out_dir += '_train_size=' + str(args.train_size)
+    args.out_dir += '_batch_size=' + str(args.batch_size)
+    args.out_dir += '_' + str(args.block_size)
+    args.out_dir += '_' + str(args.init_channels)
+    if args.lln:
+        args.out_dir += '_lln'
+
+    args.num_classes = 1
+
+    return args
+
+def init_model(args):
+    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
+                       block_size=args.block_size, num_classes=args.num_classes,
+                       lln=args.lln)
+    return model
+
+def isoLossEval(output1, output2, type='l1'):
+    power = 2 if type == 'l2' else 1
+    return -torch.mean(output1 - output2) ** power
+
+class isoLoss(nn.Module):
+    def __init__(self, loss='l1'):
+        super(isoLoss, self).__init__()
+        self.loss = loss
     
+    def forward(self, output1, output2):
+        return isoLossEval(output1, output2, type=self.loss)
+
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-# [ ] Generate Gaussian Data
+def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32],train_size=10000, test_size=40000):
+    total_dim = np.prod(dim)
+    x_1 = generate(
+        mean=np.zeros(np.prod(total_dim)),
+        cov=np.identity(np.prod(total_dim)),
+        size=train_size
+    )
+    x_2 = generate(
+        mean=np.zeros(total_dim),
+        cov=np.identity(total_dim),
+        size=train_size
+    )
+    train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
+    train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
+    train_loader_1 = torch.utils.data.DataLoader(
+        dataset=train_set_1,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
+    train_loader_2 = torch.utils.data.DataLoader(
+        dataset=train_set_2,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
+    test = generate(
+        mean=np.zeros(total_dim),
+        cov=np.identity(total_dim),
+        size=test_size
+    )
+    test_set = torch.reshape(torch.tensor(test).float(), [test_size] + dim)
+    test_loader = torch.utils.data.DataLoader(
+        dataset=test_set,
+        batch_size=test_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=2,
+    )
+    
+    return train_loader_1, train_loader_2, test_loader
 
-# We partition our dataset into 10000+10000/10000+10000/10000+10000
-
-
-def init_dataset(dir_, dataset_name='cifar10', normalize=True):
+def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean
@@ -45,9 +181,11 @@ def init_dataset(dir_, dataset_name='cifar10', normalize=True):
         dataset_func = datasets.CIFAR100
         mean = cifar100_mean
         std = cifar100_std
-
+    
     if normalize:
         train_transform = transforms.Compose([
+            # transforms.RandomCrop(32, padding=4),
+            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -57,74 +195,26 @@ def init_dataset(dir_, dataset_name='cifar10', normalize=True):
         ])
     else:
         train_transform = transforms.Compose([
+            # transforms.RandomCrop(32, padding=4),
+            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
         test_transform = transforms.Compose([
             transforms.ToTensor(),
         ])
-
+        
+    num_workers = 4
     train_dataset = dataset_func(
         dir_, train=True, transform=train_transform, download=True)
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
-    return torch.utils.data.ConcatDataset([train_dataset, test_dataset])
 
+    total_len = len(train_dataset.data) + len(test_dataset.data)
 
-def get_eval_loaders(dir_, n_eval=10000, n=10000, dataset_name='cifar10', normalize=True, num_workers=4):
-    train_dataset_1, train_dataset_2, valid_dataset_1, valid_dataset_2, test_dataset_1, test_dataset_2 = torch.utils.data.random_split(
-        init_dataset(dir_, dataset_name, normalize), [n, n, n, n, n, n])
-
-    train_loader_1 = torch.utils.data.DataLoader(
-        dataset=train_dataset_1,
-        batch_size=n,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
+    train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
+        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), 
+        [train_size, train_size, total_len - 2 * train_size]
     )
-    train_loader_2 = torch.utils.data.DataLoader(
-        dataset=train_dataset_2,
-        batch_size=n,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
-
-    valid_loader_1 = torch.utils.data.DataLoader(
-        dataset=valid_dataset_1,
-        batch_size=n,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
-    valid_loader_2 = torch.utils.data.DataLoader(
-        dataset=valid_dataset_2,
-        batch_size=n,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
-
-    test_loader_1 = torch.utils.data.DataLoader(
-        dataset=test_dataset_1,
-        batch_size=n_eval,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
-    test_loader_2 = torch.utils.data.DataLoader(
-        dataset=test_dataset_2,
-        batch_size=n_eval,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
-
-    return train_loader_1, train_loader_2, valid_loader_1, valid_loader_2, test_loader_1, test_loader_2
-
-
-def get_train_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=True, num_workers=4):
-    train_dataset_1, train_dataset_2, valid_dataset_1, valid_dataset_2, _ = torch.utils.data.random_split(
-        init_dataset(dir_, dataset_name, normalize), [n, n, n, n, 60000 - 4 * n])
 
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_dataset_1,
@@ -140,198 +230,40 @@ def get_train_loaders(dir_, batch_size, n, dataset_name='cifar10', normalize=Tru
         pin_memory=True,
         num_workers=num_workers,
     )
-
-    valid_loader_1 = torch.utils.data.DataLoader(
-        dataset=valid_dataset_1,
-        batch_size=n,
+    test_loader = torch.utils.data.DataLoader(
+        dataset=test_dataset,
+        batch_size=total_len - 2 * train_size,
         shuffle=True,
         pin_memory=True,
-        num_workers=num_workers,
+        num_workers=2,
     )
-    valid_loader_2 = torch.utils.data.DataLoader(
-        dataset=valid_dataset_2,
-        batch_size=n,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
+    return train_loader_1, train_loader_2, test_loader
 
-    return train_loader_1, train_loader_2, valid_loader_1, valid_loader_2
-
-
-def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
-    max_loss = torch.zeros(y.shape[0]).cuda()
-    max_delta = torch.zeros_like(X).cuda()
-    for zz in range(restarts):
-        delta = torch.zeros_like(X).cuda()
-        for i in range(len(epsilon)):
-            delta[:, i, :, :].uniform_(-epsilon[i][0][0].item(), epsilon[i][0][0].item())
-        delta.data = clamp(delta, lower_limit - X, upper_limit - X)
-        delta.requires_grad = True
-        for _ in range(attack_iters):
-            output = model(X + delta)
-            index = torch.where(output.max(1)[1] == y)
-            if len(index[0]) == 0:
-                break
-            loss = F.cross_entropy(output, y)
-            if opt is not None:
-                with amp.scale_loss(loss, opt) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            grad = delta.grad.detach()
-            d = delta[index[0], :, :, :]
-            g = grad[index[0], :, :, :]
-            d = clamp(d + alpha * torch.sign(g), -epsilon, epsilon)
-            d = clamp(d, lower_limit - X[index[0], :, :, :], upper_limit - X[index[0], :, :, :])
-            delta.data[index[0], :, :, :] = d
-            delta.grad.zero_()
-        all_loss = F.cross_entropy(model(X + delta), y, reduction='none').detach()
-        max_delta[all_loss >= max_loss] = delta.detach()[all_loss >= max_loss]
-        max_loss = torch.max(max_loss, all_loss)
-    return max_delta
-
-
-def evaluate_pgd(test_loader, model, attack_iters, restarts, limit_n=float("inf")):
-    epsilon = (8 / 255.) / std
-    alpha = (2 / 255.) / std
-    pgd_loss = 0
-    pgd_acc = 0
-    n = 0
-    model.eval()
-    for i, (X, y) in enumerate(test_loader):
-        X, y = X.cuda(), y.cuda()
-        pgd_delta = attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts)
-        with torch.no_grad():
-            output = model(X + pgd_delta)
-            loss = F.cross_entropy(output, y)
-            pgd_loss += loss.item() * y.size(0)
-            pgd_acc += (output.max(1)[1] == y).sum().item()
-            n += y.size(0)
-            if n >= limit_n:
-                break
-    return pgd_loss/n, pgd_acc/n
-
-
-def attack_pgd_l2(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
-    max_loss = torch.zeros(y.shape[0]).cuda()
-    max_delta = torch.zeros_like(X).cuda()
-    for zz in range(restarts):
-        delta = torch.zeros_like(X).cuda()
-        for i in range(len(epsilon)):
-            delta[:, i, :, :].uniform_(-epsilon[i][0][0].item(), epsilon[i][0][0].item())
-        delta.data = clamp(delta, lower_limit - X, upper_limit - X)
-        delta.requires_grad = True
-        for _ in range(attack_iters):
-            output = model(X + delta)
-            index = torch.where(output.max(1)[1] == y)
-            if len(index[0]) == 0:
-                break
-            loss = F.cross_entropy(output, y)
-            if opt is not None:
-                with amp.scale_loss(loss, opt) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            grad = delta.grad.detach()
-            d = delta[index[0], :, :, :]
-            g = grad[index[0], :, :, :]
-            d = clamp(d + alpha * torch.sign(g), -epsilon, epsilon)
-            d = clamp(d, lower_limit - X[index[0], :, :, :], upper_limit - X[index[0], :, :, :])
-            delta.data[index[0], :, :, :] = d
-            delta.grad.zero_()
-        all_loss = F.cross_entropy(model(X+delta), y, reduction='none').detach()
-        max_delta[all_loss >= max_loss] = delta.detach()[all_loss >= max_loss]
-        max_loss = torch.max(max_loss, all_loss)
-    return max_delta
-
-
-def evaluate_pgd_l2(test_loader, model, attack_iters, restarts, limit_n=float("inf")):
-    epsilon = (36 / 255.) / std
-    alpha = epsilon/5.
-    pgd_loss = 0
-    pgd_acc = 0
-    n = 0
-    model.eval()
-    for i, (X, y) in enumerate(test_loader):
-        X, y = X.cuda(), y.cuda()
-        pgd_delta = attack_pgd_l2(model, X, y, epsilon, alpha, attack_iters, restarts)
-        with torch.no_grad():
-            output = model(X + pgd_delta)
-            loss = F.cross_entropy(output, y)
-            pgd_loss += loss.item() * y.size(0)
-            pgd_acc += (output.max(1)[1] == y).sum().item()
-            n += y.size(0)
-            if n >= limit_n:
-                break
-    return pgd_loss/n, pgd_acc/n
-
-
-def evaluate_standard(test_loader, model):
-    test_loss = 0
-    test_acc = 0
-    n = 0
-    model.eval()
-    with torch.no_grad():
-        for i, (X, y) in enumerate(test_loader):
-            X, y = X.cuda(), y.cuda()
-            output = model(X)
-            loss = F.cross_entropy(output, y)
-            test_loss += loss.item() * y.size(0)
-            test_acc += (output.max(1)[1] == y).sum().item()
-            n += y.size(0)
-    return test_loss/n, test_acc/n
-
-
-def ortho_certificates(output, class_indices, L):
-    batch_size = output.shape[0]
-    batch_indices = torch.arange(batch_size)
-
-    onehot = torch.zeros_like(output).cuda()
-    onehot[torch.arange(output.shape[0]), class_indices] = 1.
-    output_trunc = output - onehot*1e6
-
-    output_class_indices = output[batch_indices, class_indices]
-    output_nextmax = torch.max(output_trunc, dim=1)[0]
-    output_diff = output_class_indices - output_nextmax
-    return output_diff/(math.sqrt(2)*L)
-
-
-def lln_certificates(output, class_indices, last_layer, L):
-    batch_size = output.shape[0]
-    batch_indices = torch.arange(batch_size)
-
-    onehot = torch.zeros_like(output).cuda()
-    onehot[batch_indices, class_indices] = 1.
-    output_trunc = output - onehot*1e6
-
-    lln_weight = last_layer.lln_weight
-    lln_weight_indices = lln_weight[class_indices, :]
-    lln_weight_diff = lln_weight_indices.unsqueeze(1) - lln_weight.unsqueeze(0)
-    lln_weight_diff_norm = torch.norm(lln_weight_diff, dim=2)
-    lln_weight_diff_norm = lln_weight_diff_norm + onehot
-
-    output_class_indices = output[batch_indices, class_indices]
-    output_diff = output_class_indices.unsqueeze(1) - output_trunc
-    all_certificates = output_diff/(lln_weight_diff_norm*L)
-    return torch.min(all_certificates, dim=1)[0]
-
-
-def evaluate(loader_1, loader_2, model, criterion):
+def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
     losses_list = []
-    model.eval()
+    # model.eval()
 
-    with torch.no_grad():
-        for i, (X_1, X_2) in enumerate(zip(loader_1, loader_2)):
-            X_1, X_2 = X_1[0], X_2[0]
-            X_1, X_2 = X_1.cuda(), X_2.cuda()
-            output_1, output_2 = model(X_1), model(X_2)
-            loss = criterion(output_1, output_2)
-            losses_list.append(loss)
+    for _ in range(num_sample):
+        sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
 
-        losses_array = torch.stack(losses_list).cpu().numpy()
-    return losses_array[0], losses_array
+        with torch.no_grad():
+            for _, X in enumerate(data_loader):
+                if synthetic == False:
+                    X = X[0]
+                X = X.cuda().float()
+                output1 = model(X[sample[0]])
+                output2 = model(X[sample[1]])
+                loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss).cpu().numpy()]))
+                losses_list.append(loss)
+                    
+            losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
 
+    return losses_array
+
+
+from cayley_ortho_conv import Cayley, CayleyLinear
+from block_ortho_conv import BCOP
+from skew_ortho_conv import SOC
 
 conv_mapping = {
     'standard': nn.Conv2d,
@@ -340,6 +272,7 @@ conv_mapping = {
     'cayley': Cayley
 }
 
+from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
 
 activation_dict = {
     'relu': F.relu,
@@ -349,7 +282,6 @@ activation_dict = {
     'softplus': F.softplus,
     'maxmin': MaxMin()
 }
-
 
 def activation_mapping(activation_name, channels=None):
     if activation_name == 'hh1':
@@ -361,7 +293,6 @@ def activation_mapping(activation_name, channels=None):
     else:
         activation_func = activation_dict[activation_name]
     return activation_func
-
 
 def parameter_lists(model):
     conv_params = []
