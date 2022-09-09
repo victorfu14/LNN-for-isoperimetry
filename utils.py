@@ -6,6 +6,9 @@ from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import math
+import logging
+import argparse
+from lip_convnets import LipConvNet
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -17,6 +20,98 @@ std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
+
+formatter = logging.Formatter('%(message)s')
+
+def setup_logger(name, log_file, level=logging.INFO):
+    """To setup as many loggers as you want"""
+
+    handler = logging.FileHandler(log_file)        
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
+
+def get_args():
+    parser = argparse.ArgumentParser()
+
+    # isoperimetry arguments
+    parser.add_argument('--train-size', default=10000, type=int)
+    parser.add_argument('--val-size', default=1000, type=int)
+    parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    parser.add_argument('--eval-only', default=False, type=bool)
+    parser.add_argument('--synthetic', default=False, type=bool)
+    parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
+
+    # Training specifications
+    parser.add_argument('--batch-size', default=128, type=int)
+    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--lr-min', default=0., type=float)
+    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--weight-decay', default=5e-4, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
+                        help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
+    parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
+                        help='If loss_scale is "dynamic", adaptively adjust the loss scale over time')
+
+    # Model architecture specifications
+    parser.add_argument('--conv-layer', default='soc', type=str, choices=['bcop', 'cayley', 'soc'],
+                        help='BCOP, Cayley, SOC convolution')
+    parser.add_argument('--init-channels', default=32, type=int)
+    parser.add_argument('--activation', default='maxmin', choices=['maxmin', 'hh1', 'hh2'],
+                        help='Activation function')
+    parser.add_argument('--block-size', default=2, type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8],
+                        help='size of each block')
+    parser.add_argument('--lln', action='store_true', help='set last linear to be linear and normalized')
+
+    # Dataset specifications
+    parser.add_argument('--data-dir', default='./cifar-data', type=str)
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100'],
+                        help='dataset to use for training')
+
+    # Other specifications
+    parser.add_argument('--epsilon', default=36, type=int)
+    parser.add_argument('--out-dir', default='LNNIso', type=str, help='Output directory')
+    parser.add_argument('--workers', default=4, type=int, help='Number of workers used in data-loading')
+    parser.add_argument('--seed', default=0, type=int, help='Random seed')
+    return parser.parse_args()
+
+def process_args(args):
+    if args.conv_layer == 'cayley' and args.opt_level == 'O2':
+        raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
+
+    if args.synthetic:
+        args.out_dir += '_' + str(args.syn_data)
+        args.run_name=str(args.syn_data) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
+        if args.syn_data == 'gaussian':
+            args.syn_func = np.random.multivariate_normal 
+        else:
+            raise ValueError('Unknown synthetic dataset')
+    else:
+        args.out_dir += '_' + str(args.dataset)
+        args.run_name=str(args.dataset) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
+    
+
+    args.out_dir += '_train_size=' + str(args.train_size)
+    args.out_dir += '_batch_size=' + str(args.batch_size)
+    args.out_dir += '_' + str(args.block_size)
+    args.out_dir += '_' + str(args.init_channels)
+    if args.lln:
+        args.out_dir += '_lln'
+
+    args.num_classes = 1
+
+    return args
+
+def init_model(args):
+    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
+                       block_size=args.block_size, num_classes=args.num_classes,
+                       lln=args.lln)
+    return model
 
 def isoLossEval(output1, output2, type='l1'):
     power = 2 if type == 'l2' else 1
@@ -146,7 +241,7 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
 
 def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
     losses_list = []
-    model.eval()
+    # model.eval()
 
     for _ in range(num_sample):
         sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
@@ -162,37 +257,6 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
                 losses_list.append(loss)
                     
             losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
-
-    return losses_array
-
-def random_evaluate_synthetic(model, size, num_samples, func, dim, loss='l1'):
-    losses_list = []
-    model.eval()
-    total_dim = np.prod(dim)
-
-    for _ in range(num_samples):
-        sample_1 = func(
-            mean=np.zeros(np.prod(total_dim)),
-            cov=np.identity(np.prod(total_dim)),
-            size=size
-        )
-        sample_1 = torch.reshape(torch.tensor(sample_1).float(), [size] + dim)
-        sample_2 = func(
-            mean=np.zeros(np.prod(total_dim)),
-            cov=np.identity(np.prod(total_dim)),
-            size=size
-        )
-        sample_2 = torch.reshape(torch.tensor(sample_2).float(), [size] + dim)
-
-        with torch.no_grad():
-            sample_1 = sample_1.cuda()
-            sample_2 = sample_2.cuda()
-            output1 = model(sample_1)
-            output2 = model(sample_2)
-            loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss).cpu().numpy()]))
-            losses_list.append(loss)
-                
-        losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
 
     return losses_array
 

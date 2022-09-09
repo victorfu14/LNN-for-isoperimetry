@@ -10,3 +10,4 @@ logs/
 ISO*/
 wandb/
 temp/
+train_alt.py
