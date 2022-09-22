@@ -24,14 +24,13 @@ Real world datasets:
 ```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --dataset DATASET```
 
 Synthetic distributional datasets, such as Gaussian distribution:
-```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetc SYN --syn-data SYN_DATA```
+```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetic --syn-data SYN_DATA```
 
 - CONV: bcop, cayley, soc
 - ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
 - BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
 - Use ```--lln``` to enable last layer normalization
 - DATASET: cifar10/cifar100.
-- SYN: ```True/False```
 - SYN_DATA: gaussian
 
 ## Citations
