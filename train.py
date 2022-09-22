@@ -15,6 +15,13 @@ import torch.nn.functional as F
 from apex import amp
 
 from utils import *
+from lip_convnets import LipConvNet
+
+def init_model(args):
+    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
+                       block_size=args.block_size, num_classes=args.num_classes,
+                       lln=args.lln)
+    return model
 
 def main():
     args = get_args()
@@ -24,17 +31,15 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    wandb.init(
-        project='isoperimetry', 
-        name=args.run_name
-    )
-    wandb.config = {
-        'learning_rate': args.lr_max,
-        'epochs': args.epochs,
-        'batch_size': args.batch_size
-    }
+    if not args.debug:
+        wandb.init(
+            project='Isoperimetry', 
+            job_type='train',
+            name=args.run_name,
+            config = vars(args)
+        )
 
-    train_loader_1, train_loader_2, test_loader = get_loaders(
+    train_loader_1, train_loader_2, _ = get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
@@ -42,7 +47,7 @@ def main():
     ) if args.synthetic == False else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,
-        dim=[3, 32, 32],
+        dim=args.dim,
         train_size=args.train_size,
     )
         
@@ -64,11 +69,6 @@ def main():
     train_logger = setup_logger('train_logger', train_logfile)
     train_logger.info(args)
 
-    std = cifar10_std if args.dataset == "cifar10" else cifar100_std
-
-    # Only need R^d -> R lipschitz functions
-    args.num_classes = 1
-
     model = init_model(args).cuda()
     model.train()
 
@@ -89,7 +89,7 @@ def main():
 
     criterion = isoLoss(args.loss)
 
-    lr_steps = args.epochs
+    # lr_steps = args.epochs
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(
     #     opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
@@ -149,10 +149,13 @@ def main():
         wandb.log({"loss": train_loss, "lr": lr})
         wandb.watch(model)
 
-        if epoch % 50 == 0:
+        save = 25 if epoch <= 150 else 50
+
+        if epoch % save == 0:
             model_path = os.path.join(args.out_dir, 'epoch' + str(epoch + 1) + '.pth')
             torch.save(model.state_dict(), model_path)
             # eval(args, epoch, model_path, test_loader)
+        
 
         torch.save(model.state_dict(), last_model_path)
 

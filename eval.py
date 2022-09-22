@@ -14,12 +14,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from apex import amp
 
-from lip_convnets import LipConvNet
 from utils import *
+from lip_convnets import LipConvNet
 
 from sklearn.linear_model import LinearRegression
 
 test_size_list = [50, 100, 250, 500, 1000, 2500, 5000, 8000, 10000]
+
+def init_model(args):
+    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
+                       block_size=args.block_size, num_classes=args.num_classes,
+                       lln=args.lln)
+    return model
 
 def eval(args, epoch, model_path, test_loader):
     # Evaluate on different test sample sizes
@@ -31,7 +37,7 @@ def eval(args, epoch, model_path, test_loader):
         model_test = init_model(args).cuda()
         model_test.load_state_dict(torch.load(model_path))
         model_test.float()
-        model_test.eval() if epoch !=0 else model_test.train()
+        model_test.eval() if epoch != 0 else model_test.train()
             
         start_test_time = time.time()
         losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 50, args.loss)
@@ -52,7 +58,9 @@ def evaluate_model(args, test_loader):
 
     loss = {}
     mean_loss_aggregate = []
-    epoch_list = [1, 51] + [i for i in range(101, args.epochs, 100)] + [args.epochs]
+    loss_reg = []
+    # epoch_list = [0, 1, 51] + [i for i in range(101, args.epochs, 100)] + [args.epochs]
+    epoch_list = [0, 1, 26, 51, 76] + [i for i in range(101, args.epochs, 50)] + [args.epochs]
     for i in test_size_list:
         loss[i] = []
     for epoch in epoch_list:
@@ -73,6 +81,9 @@ def evaluate_model(args, test_loader):
 
         reg = LinearRegression(fit_intercept=False).fit(X, y)
         eval_logger.info("Regression: loss = {} * 1 / sqrt(n), score = {}".format(reg.coef_, reg.score(X, y)))
+        loss_reg.append([epoch, reg.coef_[0], reg.score(X, y)])
+        table = wandb.Table(data=loss_reg, columns=['epoch', 'coefficient', 'fit score'])
+        wandb.log({'regression result for each epoch': table})
 
         table = wandb.Table(data=mean_loss, columns=['avg loss', 'sample size'])
         wandb.log({'loss vs n, epoch={}'.format(epoch): table})
@@ -90,15 +101,12 @@ def main():
     torch.cuda.manual_seed(args.seed)
 
     wandb.init(
-        project='isoperimetry', 
-        name='eval ' + args.run_name
+        project='Isoperimetry',
+        job_type='test',
+        name=args.run_name,
+        config = vars(args)
     )
-    wandb.config = {
-        'learning_rate': args.lr_max,
-        'epochs': args.epochs,
-        'batch_size': args.batch_size
-    }
-
+    
     _, _, test_loader = get_loaders(
         args.data_dir, 
         args.batch_size, 
@@ -107,7 +115,7 @@ def main():
     ) if args.synthetic == False else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,
-        dim=[3, 32, 32],
+        dim=args.dim,
         train_size=args.train_size,
     )
         
