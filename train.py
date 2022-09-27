@@ -20,7 +20,7 @@ from lip_convnets import LipConvNet
 def init_model(args):
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
-                       lln=args.lln)
+                       lln=args.lln, syn=args.synthetic)
     return model
 
 def main():
@@ -38,6 +38,8 @@ def main():
             name=args.run_name,
             config = vars(args)
         )
+    
+    # args.dim = [3, 32, 32]
 
     train_loader_1, train_loader_2, _ = get_loaders(
         args.data_dir, 

@@ -33,7 +33,7 @@ class LipBlock(nn.Module):
 
 class LipConvNet(nn.Module):
     def __init__(self, conv_name, activation, init_channels=32, block_size=1,
-                 num_classes=1, input_side=32, lln=False):
+                 num_classes=1, input_side=32, lln=False, syn=False):
         super(LipConvNet, self).__init__()
         self.lln = lln
         self.in_planes = 3
@@ -41,6 +41,10 @@ class LipConvNet(nn.Module):
         conv_layer = conv_mapping[conv_name]
         assert type(block_size) == int
 
+        # if syn:
+        #     self.layer0 = nn.AvgPool2d(1, stride=1)
+        # else:
+        #     self.layer0 = nn.MaxPool2d(2, stride=2)
         self.layer1 = self._make_layer(init_channels, block_size, conv_layer,
                                        activation, stride=2, kernel_size=3)
         self.layer2 = self._make_layer(self.in_planes, block_size, conv_layer,
@@ -74,6 +78,7 @@ class LipConvNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        # x = self.layer0(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)

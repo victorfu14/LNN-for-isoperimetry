@@ -1,5 +1,6 @@
 import argparse
 import copy
+from inspect import ArgSpec
 import logging
 from multiprocessing.util import get_logger
 import os
@@ -24,7 +25,7 @@ test_size_list = [50, 100, 250, 500, 1000, 2500, 5000, 8000, 10000]
 def init_model(args):
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
-                       lln=args.lln)
+                       lln=args.lln, syn=args.synthetic)
     return model
 
 def eval(args, epoch, model_path, test_loader):

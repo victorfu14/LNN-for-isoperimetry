@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
-import math
 import logging
 import argparse
 
@@ -39,13 +38,11 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--train-size', default=10000, type=int)
-    # parser.add_argument('--val-size', default=1000, type=int)
-    parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
-    parser.add_argument('--synthetic', default=False, type=bool)
-    parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
+    parser.add_argument('--synthetic', action='store_true')
     parser.add_argument('--dim', nargs='*', default=None, type=int)
-
     parser.add_argument('--debug', action='store_true')
+    # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -71,7 +68,7 @@ def get_args():
 
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100'],
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian'],
                         help='dataset to use for training')
 
     # Other specifications
@@ -86,21 +83,21 @@ def process_args(args):
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     if args.synthetic:
-        args.out_dir += '_' + str(args.syn_data)
-        args.run_name = str(args.syn_data) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' train_size=' + str(args.train_size) +  ' reduceOnPlateau'
         if args.syn_data == 'gaussian':
             args.syn_func = np.random.multivariate_normal 
         else:
             raise ValueError('Unknown synthetic dataset')
-    else:
-        args.out_dir += '_' + str(args.dataset)
-        args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' train_size=' + str(args.train_size) +  ' reduceOnPlateau'
+    
+    args.out_dir += '_' + str(args.dataset)
+    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim)
 
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.dim)
-    args.out_dir += '_train_size=' + str(args.train_size)
     args.out_dir += '_' + str(args.lr_max)
+    args.out_dir += '_train_size=' + str(args.train_size)
+
+    
     if args.lln:
         args.out_dir += '_lln'
 
