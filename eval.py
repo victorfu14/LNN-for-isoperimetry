@@ -42,7 +42,6 @@ def main():
 
     args.num_classes = 1
 
-    # TODO we should still look at L_1 loss when evaluating
     criterion = iso_l1_loss
 
     eval_list = [10000, 9000, 8000, 7000, 6000, 5000, 4000, 3000, 2000, 1000, 500, 100]
