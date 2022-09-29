@@ -1,77 +1,131 @@
+import argparse
+import copy
+from inspect import ArgSpec
 import logging
+from multiprocessing.util import get_logger
 import os
 import time
-from train import iso_l1_loss, init_model, init_log
+import math
+from shutil import copyfile
 import wandb
+
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from apex import amp
 
 from utils import *
+from lip_convnets import LipConvNet
+
+from sklearn.linear_model import LinearRegression
+
+test_size_list = [50, 100, 250, 500, 1000, 2500, 5000, 8000, 10000]
 
 
-def evaluate(loader_1, loader_2, n_eval, num, model, criterion):
-    losses_list = []
-    hist = []
-    model.eval()
+def init_model(args):
+    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
+                       block_size=args.block_size, num_classes=args.num_classes,
+                       lln=args.lln, syn=args.synthetic)
+    return model
 
-    with torch.no_grad():
-        for i, (X_1, X_2) in enumerate(zip(loader_1, loader_2)):
-            X_1, X_2 = X_1[0].cuda(), X_2[0].cuda()
 
-            batch_size = num
-            weights = torch.ones(n_eval).expand(batch_size, -1)
-            id_X_1 = torch.multinomial(weights, num_samples=n_eval, replacement=False)
-            id_X_2 = torch.multinomial(weights, num_samples=n_eval, replacement=False)
-            for j, (id_1, id_2) in enumerate(zip(id_X_1, id_X_2)):
-                output_1, output_2 = model(X_1[id_1]), model(X_2[id_2])
-                loss = criterion(output_1, output_2)
-                losses_list.append(loss)
-                hist.append([j, loss])
+def eval(args, epoch, model_path, test_loader):
+    # Evaluate on different test sample sizes
+    logger = logging.getLogger('eval_logger')
+    logger.info('Before epoch {}'.format(epoch))
+    logger.info('Test sample size \t Avg abs test loss \t Total time')
+    loss = {}
+    for test_size in test_size_list:
+        model_test = init_model(args).cuda()
+        model_test.load_state_dict(torch.load(model_path))
+        model_test.float()
+        model_test.eval() if epoch != 0 else model_test.train()
 
-        losses_array = torch.stack(losses_list).cpu().numpy()
-    return np.median(losses_array), losses_array, hist
+        start_test_time = time.time()
+        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 50, args.loss)
+        total_time = time.time() - start_test_time
+        test_loss = np.mean(np.abs(losses_arr))
+        loss[test_size] = [[val, epoch] for val in losses_arr]
+
+        logger.info('%d \t %.4f \t %.4f', test_size, test_loss, total_time)
+
+    return loss
+
+
+def evaluate_model(args, test_loader):
+    eval_logfile = os.path.join(args.out_dir, 'eval.log')
+    if os.path.exists(eval_logfile):
+        os.remove(eval_logfile)
+    eval_logger = setup_logger('eval_logger', eval_logfile)
+    eval_logger.info(args)
+
+    loss = {}
+    mean_loss_aggregate = []
+    loss_reg = []
+    # epoch_list = [0, 1, 51] + [i for i in range(101, args.epochs, 100)] + [args.epochs]
+    epoch_list = [0, 1, 26, 51, 76] + [i for i in range(101, args.epochs, 50)] + [args.epochs]
+    for i in test_size_list:
+        loss[i] = []
+    for epoch in epoch_list:
+        mean_loss = []
+        model_path = os.path.join(args.out_dir, 'last.pth') if epoch == args.epochs else os.path.join(
+            args.out_dir, 'epoch' + str(epoch) + '.pth')
+        loss_this_epoch = eval(args, epoch, model_path, test_loader)
+        for test_size in loss_this_epoch:
+            loss[test_size] += loss_this_epoch[test_size]
+            mean_loss_info = [np.mean(np.abs(np.transpose(loss_this_epoch[test_size])[0])), test_size, epoch]
+            mean_loss.append(mean_loss_info[:2])
+            mean_loss_aggregate.append(mean_loss_info)
+            table = wandb.Table(data=loss[test_size], columns=['loss', 'epoch'])
+            wandb.log({'n={}'.format(test_size): table})
+
+        # regression
+        X = 1 / np.sqrt([[size] for size in np.transpose(mean_loss)[1]])
+        y = np.transpose(mean_loss)[0]
+
+        reg = LinearRegression(fit_intercept=False).fit(X, y)
+        eval_logger.info("Regression: loss = {} * 1 / sqrt(n), score = {}".format(reg.coef_, reg.score(X, y)))
+        loss_reg.append([epoch, reg.coef_[0], reg.score(X, y)])
+        table = wandb.Table(data=loss_reg, columns=['epoch', 'coefficient', 'fit score'])
+        wandb.log({'regression result for each epoch': table})
+
+        table = wandb.Table(data=mean_loss, columns=['avg loss', 'sample size'])
+        wandb.log({'loss vs n, epoch={}'.format(epoch): table})
+        table = wandb.Table(data=mean_loss_aggregate, columns=['avg loss', 'sample size', 'epoch'])
+        wandb.log({'loss vs n': table})
+
+    return
 
 
 def main():
     args = get_args()
+    args = process_args(args)
 
-    if args.conv_layer == 'cayley' and args.opt_level == 'O2':
-        raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
 
-    init_log(args, log_name='eval.log')
+    wandb.init(
+        project='Isoperimetry',
+        job_type='test',
+        name=args.run_name,
+        config=vars(args)
+    )
 
-    args.num_classes = 1
+    _, _, test_loader = get_loaders(
+        args.data_dir,
+        args.batch_size,
+        args.dataset,
+        train_size=args.train_size,
+    ) if args.synthetic == False else get_synthetic_loaders(
+        batch_size=args.batch_size,
+        generate=args.syn_func,
+        dim=args.dim,
+        train_size=args.train_size,
+    )
 
-    criterion = iso_l1_loss
-
-    eval_list = [10000, 9000, 8000, 7000, 6000, 5000, 4000, 3000, 2000, 1000, 500, 100]
-    eval_iter = [100 * i for i in range(args.epochs//100 + 1)]
-    assert args.n == 15000
-
-    wandb.init(project="iso", entity="pbb", name=args.dataset+" b={} eval".format(args.block_size))
-
-    init_random(args.seed)
-    _, _, test_loader_1, test_loader_2 = get_loaders(
-        args.data_dir, n=args.n, dataset_name=args.dataset, num_workers=args.workers)
-
-    for i in eval_iter:
-        model = init_model(args).cuda()
-        model.load_state_dict(torch.load(os.path.join(args.out_dir, 'iter_{}.pth'.format(i))))
-        hist_all = []
-        for n_eval in eval_list:
-            model.float()
-            model.eval()
-
-            test_loss, test_loss_list, hist = evaluate(
-                test_loader_1, test_loader_2, n_eval, args.eval_num, model, criterion)
-            hist_all.append([n_eval, test_loss])
-            histogram = wandb.plot.histogram(wandb.Table(
-                data=hist, columns=["step", "loss"]), value='loss', title='iter={} n={}'.format(i, n_eval))
-            wandb.log({'iter={} n={}'.format(i, n_eval): histogram})
-
-        histogram_all = wandb.plot.histogram(wandb.Table(
-            data=hist_all, columns=["n", "loss"]), value='loss', title='histogram')
-        wandb.log({'histogram iter{}'.format(i): histogram_all})
+    evaluate_model(args, test_loader)
 
 
 if __name__ == "__main__":
