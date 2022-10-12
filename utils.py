@@ -5,15 +5,21 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
-import math
 import logging
 import argparse
-from lip_convnets import LipConvNet
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
 cifar100_mean = (0.5071, 0.4867, 0.4408)
 cifar100_std = (0.2675, 0.2565, 0.2761)
+
+mnist_mean = (0.1307)
+mnist_std = (0.3081)
+
+cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
+cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
+cifar100_maxpool_mean = (0.5631373, 0.54179263, 0.4953446)
+cifar100_maxpool_std = (0.26223433, 0.25095224, 0.27351803)
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -22,6 +28,12 @@ upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
 
 formatter = logging.Formatter('%(message)s')
+
+# epoch_store_list = [3]
+# epoch_store_list = [0, 5, 10, 25, 50, 75, 100, 150] 
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+poch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
 def setup_logger(name, log_file, level=logging.INFO):
     """To setup as many loggers as you want"""
@@ -40,11 +52,12 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--train-size', default=10000, type=int)
-    parser.add_argument('--val-size', default=1000, type=int)
-    parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
-    parser.add_argument('--eval-only', default=False, type=bool)
-    parser.add_argument('--synthetic', default=False, type=bool)
-    parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
+    parser.add_argument('--synthetic', action='store_true')
+    parser.add_argument('--dim', nargs='*', default=None, type=int)
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--rand-label', action='store_true')
+    # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -70,7 +83,7 @@ def get_args():
 
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100'],
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist'],
                         help='dataset to use for training')
 
     # Other specifications
@@ -85,33 +98,27 @@ def process_args(args):
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     if args.synthetic:
-        args.out_dir += '_' + str(args.syn_data)
-        args.run_name=str(args.syn_data) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
-        if args.syn_data == 'gaussian':
+        if args.dataset == 'gaussian':
             args.syn_func = np.random.multivariate_normal 
         else:
             raise ValueError('Unknown synthetic dataset')
-    else:
-        args.out_dir += '_' + str(args.dataset)
-        args.run_name=str(args.dataset) + ' train_size=' + str(args.train_size) + ' block=' + str(args.block_size) + ' batch=' + str(args.batch_size) + ' reduceOnPlateau'
     
+    args.out_dir += '_' + str(args.dataset)
+    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim)
 
-    args.out_dir += '_train_size=' + str(args.train_size)
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
-    args.out_dir += '_' + str(args.init_channels)
+    args.out_dir += '_' + str(args.dim)
+    args.out_dir += '_' + str(args.lr_max)
+    args.out_dir += '_train_size=' + str(args.train_size)
+
     if args.lln:
         args.out_dir += '_lln'
 
+    # Only need R^d -> R lipschitz functions
     args.num_classes = 1
 
     return args
-
-def init_model(args):
-    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
-                       block_size=args.block_size, num_classes=args.num_classes,
-                       lln=args.lln)
-    return model
 
 def isoLossEval(output1, output2, type='l1'):
     power = 2 if type == 'l2' else 1
@@ -169,19 +176,23 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         pin_memory=True,
         num_workers=2,
     )
-    
     return train_loader_1, train_loader_2, test_loader
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000):
+def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
-        mean = cifar10_mean
-        std = cifar10_std
+        mean = cifar10_mean if dim is None else cifar10_maxpool_mean
+        std = cifar10_std if dim is None else cifar10_maxpool_std
     elif dataset_name == 'cifar100':
         dataset_func = datasets.CIFAR100
-        mean = cifar100_mean
-        std = cifar100_std
-    
+        mean = cifar100_mean if dim is None else cifar100_maxpool_mean
+        std = cifar100_std if dim is None else cifar100_maxpool_std
+    elif dataset_name == 'mnist':
+        dataset_func = datasets.MNIST
+        mean = mnist_mean
+        std = mnist_std
+
+
     if normalize:
         train_transform = transforms.Compose([
             # transforms.RandomCrop(32, padding=4),
@@ -211,8 +222,11 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
 
     total_len = len(train_dataset.data) + len(test_dataset.data)
 
+    total_set = torch.utils.data.ConcatDataset([train_dataset, test_dataset])
+    total_set.targets = np.random.choice([-1, 1], size = len(total_len))
+
     train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
-        torch.utils.data.ConcatDataset([train_dataset, test_dataset]), 
+        total_set, 
         [train_size, train_size, total_len - 2 * train_size]
     )
 

@@ -210,12 +210,20 @@ class SOC(nn.Module):
             curr_z = x
 
         z = curr_z
+        # print(curr_z.size())
+        pad = self.kernel_size//2
+        # if self.stride > 1:
+        #     while ((curr_z.size(dim=3) + pad - self.kernel_size) // self.stride + 1) % 2 != 0:
+        #         pad += 1
+
         for i in range(1, num_terms+1):
             curr_z = F.conv2d(curr_z, conv_filter_n, 
-                              padding=(self.kernel_size//2, 
-                                       self.kernel_size//2))/float(i)
+                              padding=(pad, pad)) / float(i)
+            # print(curr_z.size())
             z = z + curr_z
-            
+
+        print('')   
+
         if self.out_channels < self.in_channels:
             z = z[:, :self.out_channels, :, :]
             

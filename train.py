@@ -15,6 +15,14 @@ import torch.nn.functional as F
 from apex import amp
 
 from utils import *
+from lip_convnets import LipConvNet
+
+def init_model(args):
+    args.in_planes = 1 if args.dataset == 'mnist' else 3
+    model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
+                       block_size=args.block_size, num_classes=args.num_classes,
+                       lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
+    return model
 
 def main():
     args = get_args()
@@ -24,28 +32,28 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    wandb.init(
-        project='isoperimetry', 
-        name=args.run_name
-    )
-    wandb.config = {
-        'learning_rate': args.lr_max,
-        'epochs': args.epochs,
-        'batch_size': args.batch_size
-    }
+    if not args.debug:
+        wandb.init(
+            project='Isoperimetry', 
+            job_type='train',
+            name=args.run_name,
+            config = vars(args)
+        )
+    
+    # args.dim = [3, 32, 32]
 
-    train_loader_1, train_loader_2, test_loader = get_loaders(
+    train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
+        batch_size=args.batch_size,
+        generate=args.syn_func,
+        dim=args.dim,
+        train_size=args.train_size,
+    ) if args.synthetic else get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
         train_size = args.train_size, 
-    ) if args.synthetic == False else get_synthetic_loaders(
-        batch_size=args.batch_size,
-        generate=args.syn_func,
-        dim=[3, 32, 32],
-        train_size=args.train_size,
     )
-        
+
     os.makedirs(args.out_dir, exist_ok=True)
     code_dir = os.path.join(args.out_dir, 'code')
     os.makedirs(code_dir, exist_ok=True)
@@ -56,18 +64,12 @@ def main():
             if f[-3:] == '.py' or f[-3:] == '.sh':
                 copyfile(src, dst)
 
-
     train_logfile = os.path.join(args.out_dir, 'train.log')
     if os.path.exists(train_logfile):
         os.remove(train_logfile)
     
     train_logger = setup_logger('train_logger', train_logfile)
     train_logger.info(args)
-
-    std = cifar10_std if args.dataset == "cifar10" else cifar100_std
-
-    # Only need R^d -> R lipschitz functions
-    args.num_classes = 1
 
     model = init_model(args).cuda()
     model.train()
@@ -87,24 +89,24 @@ def main():
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
 
-    criterion = isoLoss(args.loss)
+    criterion = isoLoss()
 
     lr_steps = args.epochs
-    # scheduler = torch.optim.lr_scheduler.MultiStepLR(
-    #     opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
 
     # Training
     start_train_time = time.time()
-    
-    model_path = os.path.join(args.out_dir, 'epoch' + str(0) + '.pth')
-    torch.save(model.state_dict(), model_path)
-
     train_logger.info('Epoch \t Seconds \t LR \t Train Loss')
     for epoch in range(args.epochs):
+        if epoch in epoch_store_list:
+            model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
+            torch.save(model.state_dict(), model_path)
+
         model.train()
         start_epoch_time = time.time()
         train_loss = 0
@@ -126,22 +128,19 @@ def main():
                 scaled_loss.backward()
             opt.step()
 
-            if args.loss == 'l1': 
-                train_loss += ce_loss * X_1.size(0)
-            else:
-                train_loss += -torch.sqrt(-ce_loss) * X_1.size(0)
+            train_loss += ce_loss * X_1.size(0)
             train_n += X_1.size(0)
 
         epoch_time = time.time()
         train_loss /= train_n
 
-        # reduce on plateau scheduler
-        scheduler.step(train_loss)
-        lr = scheduler._last_lr[0]
+        # # reduce on plateau scheduler
+        # scheduler.step(train_loss)
+        # lr = scheduler._last_lr[0]
 
         # multistep scheduler
-        # scheduler.step()
-        # lr = scheduler.get_last_lr()[0]
+        scheduler.step()
+        lr = scheduler.get_last_lr()[0]
 
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss)
@@ -149,16 +148,13 @@ def main():
         wandb.log({"loss": train_loss, "lr": lr})
         wandb.watch(model)
 
-        if epoch % 50 == 0:
-            model_path = os.path.join(args.out_dir, 'epoch' + str(epoch + 1) + '.pth')
-            torch.save(model.state_dict(), model_path)
-            # eval(args, epoch, model_path, test_loader)
-
         torch.save(model.state_dict(), last_model_path)
 
         trainer_state_dict = {'epoch': epoch, 'optimizer_state_dict': opt.state_dict()}
         torch.save(trainer_state_dict, last_opt_path)
 
+    model_path = os.path.join(args.out_dir, 'epoch' + str(args.epochs) + '.pth')
+    torch.save(model.state_dict(), model_path)
     train_time = time.time()
     train_logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
 
