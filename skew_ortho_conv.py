@@ -222,8 +222,6 @@ class SOC(nn.Module):
             # print(curr_z.size())
             z = z + curr_z
 
-        print('')   
-
         if self.out_channels < self.in_channels:
             z = z[:, :self.out_channels, :, :]
             

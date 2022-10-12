@@ -111,17 +111,18 @@ def main():
         config = vars(args)
     )
     
-    _, _, test_loader = get_loaders(
+    _, test_loader = get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
         train_size = args.train_size, 
-    ) if args.synthetic == False else get_synthetic_loaders(
-        batch_size=args.batch_size,
-        generate=args.syn_func,
-        dim=args.dim,
-        train_size=args.train_size,
-    )
+    ) 
+    # if args.synthetic == False else get_synthetic_loaders(
+    #     batch_size=args.batch_size,
+    #     generate=args.syn_func,
+    #     dim=args.dim,
+    #     train_size=args.train_size,
+    # )
         
     evaluate_model(args, test_loader)
         
