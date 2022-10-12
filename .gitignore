@@ -12,3 +12,6 @@ wandb/
 temp/
 train_alt.py
 jobs/
+mnist/
+*.txt
+debug*/
