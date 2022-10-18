@@ -62,7 +62,7 @@ def evaluate_model(args, test_loader):
     loss = {}
     mean_loss_aggregate = []
     loss_reg = []
-    epoch_list = epoch_store_list if args.epochs in epoch_store_list else epoch_store_list + [args.epochs]
+    epoch_list = epoch_eval_list if args.epochs in epoch_eval_list else epoch_eval_list + [args.epochs]
     for i in test_size_list:
         loss[i] = []
     for epoch in epoch_list:

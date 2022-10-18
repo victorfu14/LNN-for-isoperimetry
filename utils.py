@@ -18,8 +18,13 @@ mnist_std = (0.3081)
 
 cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
 cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
+cifar10_avgpool_mean = (0.5070761, 0.48655173, 0.44091645)
+cifar10_avgpool_std = (0.2594151, 0.24840859, 0.26879084)
+
 cifar100_maxpool_mean = (0.5631373, 0.54179263, 0.4953446)
 cifar100_maxpool_std = (0.26223433, 0.25095224, 0.27351803)
+cifar100_avgpool_mean = (0.5070756, 0.48654792, 0.44091725)
+cifar100_avgpool_std = (0.25941512, 0.24840887, 0.26879147)
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -30,9 +35,10 @@ lower_limit = ((0 - mu)/ std)
 formatter = logging.Formatter('%(message)s')
 
 # epoch_store_list = [3]
-# epoch_store_list = [0, 5, 10, 25, 50, 75, 100, 150] 
-epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
-poch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150] 
+epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150]
+# epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
 def setup_logger(name, log_file, level=logging.INFO):
@@ -195,8 +201,6 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
 
     if normalize:
         train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -206,13 +210,15 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         ])
     else:
         train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
         test_transform = transforms.Compose([
             transforms.ToTensor(),
         ])
+
+    if dataset_name == 'mnist':
+        train_transform = transforms.Compose([transforms.Pad(2), train_transform])
+        test_transform = transforms.Compose([transforms.Pad(2), test_transform])
         
     num_workers = 4
     train_dataset = dataset_func(
@@ -223,7 +229,6 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
     total_len = len(train_dataset.data) + len(test_dataset.data)
 
     total_set = torch.utils.data.ConcatDataset([train_dataset, test_dataset])
-    total_set.targets = np.random.choice([-1, 1], size = len(total_len))
 
     train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
         total_set, 

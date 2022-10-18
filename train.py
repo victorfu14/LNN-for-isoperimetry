@@ -17,11 +17,15 @@ from apex import amp
 from utils import *
 from lip_convnets import LipConvNet
 
+from torchinfo import summary
+
 def init_model(args):
     args.in_planes = 1 if args.dataset == 'mnist' else 3
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
                        lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
+    # summary(model, input_size=(128, 3, 32, 32))
+    # summary(model, input_size=(128, 1, 28, 28))
     return model
 
 def main():
@@ -119,6 +123,8 @@ def main():
             X_1, X_2 = X_1.cuda(), X_2.cuda()
 
             output1, output2 = model(X_1), model(X_2)
+
+            # print(output1.size())
         
             ce_loss = criterion(output1, output2)
             loss = ce_loss
@@ -145,8 +151,9 @@ def main():
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss)
         
-        wandb.log({"loss": train_loss, "lr": lr})
-        wandb.watch(model)
+        if not args.debug:
+            wandb.log({"loss": train_loss, "lr": lr})
+            wandb.watch(model)
 
         torch.save(model.state_dict(), last_model_path)
 
