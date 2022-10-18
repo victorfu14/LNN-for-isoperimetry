@@ -16,3 +16,4 @@ mnist/
 *.txt
 debug*/
 Iso*/
+cifar-5m/
