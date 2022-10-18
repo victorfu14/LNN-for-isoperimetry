@@ -33,7 +33,7 @@ class LipBlock(nn.Module):
 
 class LipConvNet(nn.Module):
     def __init__(self, conv_name, activation, init_channels=32, block_size=1,
-                 num_classes=1, in_planes=3, input_side=32, lln=False, syn=False):
+                 num_classes=1, in_planes=3, input_side=32, lln=False, syn=False, depth=1):
         super(LipConvNet, self).__init__()
         self.lln = lln
         self.in_planes = in_planes
