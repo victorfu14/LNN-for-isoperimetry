@@ -2,11 +2,14 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import logging
 import argparse
+import os
+import json
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -18,13 +21,9 @@ mnist_std = (0.3081)
 
 cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
 cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
-cifar10_avgpool_mean = (0.5070761, 0.48655173, 0.44091645)
-cifar10_avgpool_std = (0.2594151, 0.24840859, 0.26879084)
 
 cifar100_maxpool_mean = (0.5631373, 0.54179263, 0.4953446)
 cifar100_maxpool_std = (0.26223433, 0.25095224, 0.27351803)
-cifar100_avgpool_mean = (0.5070756, 0.48654792, 0.44091725)
-cifar100_avgpool_std = (0.25941512, 0.24840887, 0.26879147)
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -184,7 +183,42 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     )
     return train_loader_1, train_loader_2, test_loader
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None):
+class CIFAR5M(Dataset):
+    def __init__(self, dir_, label, transform, train=True):
+        super(Dataset, self).__init__()
+        assert 0 <= label <= 9
+        self.label = label
+        self.dir_ = dir_
+        self.transform = transform
+        dataset = cifar_5m(dir_, label=self.label)
+        self.data = dataset['X']
+        self.targets = dataset['Y']
+        
+    def __len__(self):
+        return self.data.shape[0]
+        
+    def __getitem__(self, index):
+        assert 0 <= index <= self.__len__
+        img = self.data[index]
+        if self.transform:
+            img = self.transform(img)
+        return img, self.targets[index]
+
+def cifar_5m(dir_, label=0, train=True):
+    merged_data = {'X': [], 'Y': []}
+    for i in range(6):
+        file = os.path.join(dir_, 'cifar5m_part' + str(i) + '.npz')
+        data_part = np.load(file)
+        for (x, y) in zip(data_part['X'], data_part['Y']):
+            if y == label:
+                merged_data['X'].append(x)
+                merged_data['Y'].append(y)
+
+    merged_data['X'] = np.array(merged_data['X']) 
+    merged_data['Y'] = np.array(merged_data['Y']) 
+    return merged_data
+
+def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None, label=None):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean if dim is None else cifar10_maxpool_mean
@@ -197,6 +231,12 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         dataset_func = datasets.MNIST
         mean = mnist_mean
         std = mnist_std
+    elif dataset_name == 'cifar-5m':
+        assert label is not None
+        f = open('cifar-5m.json')
+        data = json.load(f)
+        mean = data['cifar-5m'][label]['mean']
+        std = data['cifar-5m'][label]['std']
 
 
     if normalize:
