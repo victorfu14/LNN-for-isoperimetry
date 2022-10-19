@@ -24,9 +24,10 @@ test_size_list = [50, 100, 250, 500, 1000, 2500, 5000, 8000, 10000]
 
 
 def init_model(args):
+    args.in_planes = 1 if args.dataset == 'mnist' else 3
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
-                       lln=args.lln, syn=args.synthetic)
+                       lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
     return model
 
 
@@ -43,7 +44,7 @@ def eval(args, epoch, model_path, test_loader):
         model_test.eval() if epoch != 0 else model_test.train()
 
         start_test_time = time.time()
-        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 50, args.loss)
+        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 20)
         total_time = time.time() - start_test_time
         test_loss = np.mean(np.abs(losses_arr))
         loss[test_size] = [[val, epoch] for val in losses_arr]
@@ -60,17 +61,16 @@ def evaluate_model(args, test_loader):
     eval_logger = setup_logger('eval_logger', eval_logfile)
     eval_logger.info(args)
 
+    start = time.time()
     loss = {}
     mean_loss_aggregate = []
     loss_reg = []
-    # epoch_list = [0, 1, 51] + [i for i in range(101, args.epochs, 100)] + [args.epochs]
-    epoch_list = [0, 1, 26, 51, 76] + [i for i in range(101, args.epochs, 50)] + [args.epochs]
+    epoch_list = epoch_eval_list if args.epochs in epoch_eval_list else epoch_eval_list + [args.epochs]
     for i in test_size_list:
         loss[i] = []
     for epoch in epoch_list:
         mean_loss = []
-        model_path = os.path.join(args.out_dir, 'last.pth') if epoch == args.epochs else os.path.join(
-            args.out_dir, 'epoch' + str(epoch) + '.pth')
+        model_path = os.path.join(args.out_dir, 'epoch' + str(epoch) + '.pth')
         loss_this_epoch = eval(args, epoch, model_path, test_loader)
         for test_size in loss_this_epoch:
             loss[test_size] += loss_this_epoch[test_size]
@@ -95,6 +95,8 @@ def evaluate_model(args, test_loader):
         table = wandb.Table(data=mean_loss_aggregate, columns=['avg loss', 'sample size', 'epoch'])
         wandb.log({'loss vs n': table})
 
+    end = time.time()
+    eval_logger.info('Total eval time: %.4f minutes', (end - start)/60)
     return
 
 
@@ -108,7 +110,7 @@ def main():
 
     wandb.init(
         project='Isoperimetry',
-        job_type='test',
+        job_type='eval',
         name=args.run_name,
         config=vars(args)
     )

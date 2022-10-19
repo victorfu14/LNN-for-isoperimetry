@@ -1,6 +1,4 @@
-<<<<<<< HEAD
 *.pth
-=======
 __pycache__/
 apex/
 cifar-data/
@@ -15,4 +13,7 @@ wandb/
 temp/
 train_alt.py
 jobs/
->>>>>>> 1492c1b3089155defe7267a735703ec0c0b9d90a
+mnist/
+*.txt
+debug*/
+Iso*/

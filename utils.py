@@ -6,15 +6,27 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 import numpy as np
 import logging
 import argparse
+import os
+import json
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
 cifar100_mean = (0.5071, 0.4867, 0.4408)
 cifar100_std = (0.2675, 0.2565, 0.2761)
+
+mnist_mean = (0.1307)
+mnist_std = (0.3081)
+
+cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
+cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
+
+cifar100_maxpool_mean = (0.5631373, 0.54179263, 0.4953446)
+cifar100_maxpool_std = (0.26223433, 0.25095224, 0.27351803)
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -23,6 +35,13 @@ upper_limit = ((1 - mu) / std)
 lower_limit = ((0 - mu) / std)
 
 formatter = logging.Formatter('%(message)s')
+
+# epoch_store_list = [3]
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150]
+epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150]
+# epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
 
 def setup_logger(name, log_file, level=logging.INFO):
@@ -46,6 +65,7 @@ def get_args():
     parser.add_argument('--synthetic', action='store_true')
     parser.add_argument('--dim', nargs='*', default=None, type=int)
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--rand-label', action='store_true')
     # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
     # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
 
@@ -73,7 +93,7 @@ def get_args():
 
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian'],
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist'],
                         help='dataset to use for training')
 
     # Other specifications
@@ -89,7 +109,7 @@ def process_args(args):
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
     if args.synthetic:
-        if args.syn_data == 'gaussian':
+        if args.dataset == 'gaussian':
             args.syn_func = np.random.multivariate_normal
         else:
             raise ValueError('Unknown synthetic dataset')
@@ -171,24 +191,68 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         pin_memory=True,
         num_workers=2,
     )
-
     return train_loader_1, train_loader_2, test_loader
 
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None):
+class CIFAR5M(Dataset):
+    def __init__(self, dir_, label, transform, train=True):
+        super(Dataset, self).__init__()
+        assert 0 <= label <= 9
+        self.label = label
+        self.dir_ = dir_
+        self.transform = transform
+        dataset = cifar_5m(dir_, label=self.label)
+        self.data = dataset['X']
+        self.targets = dataset['Y']
+
+    def __len__(self):
+        return self.data.shape[0]
+
+    def __getitem__(self, index):
+        assert 0 <= index <= self.__len__
+        img = self.data[index]
+        if self.transform:
+            img = self.transform(img)
+        return img, self.targets[index]
+
+
+def cifar_5m(dir_, label=0, train=True):
+    merged_data = {'X': [], 'Y': []}
+    for i in range(6):
+        file = os.path.join(dir_, 'cifar5m_part' + str(i) + '.npz')
+        data_part = np.load(file)
+        for (x, y) in zip(data_part['X'], data_part['Y']):
+            if y == label:
+                merged_data['X'].append(x)
+                merged_data['Y'].append(y)
+
+    merged_data['X'] = np.array(merged_data['X'])
+    merged_data['Y'] = np.array(merged_data['Y'])
+    return merged_data
+
+
+def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None, label=None):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
-        mean = cifar10_mean
-        std = cifar10_std
+        mean = cifar10_mean if dim is None else cifar10_maxpool_mean
+        std = cifar10_std if dim is None else cifar10_maxpool_std
     elif dataset_name == 'cifar100':
         dataset_func = datasets.CIFAR100
-        mean = cifar100_mean
-        std = cifar100_std
+        mean = cifar100_mean if dim is None else cifar100_maxpool_mean
+        std = cifar100_std if dim is None else cifar100_maxpool_std
+    elif dataset_name == 'mnist':
+        dataset_func = datasets.MNIST
+        mean = mnist_mean
+        std = mnist_std
+    elif dataset_name == 'cifar-5m':
+        assert label is not None
+        f = open('cifar-5m.json')
+        data = json.load(f)
+        mean = data['cifar-5m'][label]['mean']
+        std = data['cifar-5m'][label]['std']
 
     if normalize:
         train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -198,13 +262,15 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         ])
     else:
         train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
         test_transform = transforms.Compose([
             transforms.ToTensor(),
         ])
+
+    if dataset_name == 'mnist':
+        train_transform = transforms.Compose([transforms.Pad(2), train_transform])
+        test_transform = transforms.Compose([transforms.Pad(2), test_transform])
 
     num_workers = 4
     train_dataset = dataset_func(
@@ -214,8 +280,10 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
 
     total_len = len(train_dataset.data) + len(test_dataset.data)
 
+    total_set = torch.utils.data.ConcatDataset([train_dataset, test_dataset])
+
     train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
-        torch.utils.data.ConcatDataset([train_dataset, test_dataset]),
+        total_set,
         [train_size, train_size, total_len - 2 * train_size]
     )
 
