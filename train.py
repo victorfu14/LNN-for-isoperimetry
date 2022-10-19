@@ -43,8 +43,6 @@ def main():
             name=args.run_name,
             config = vars(args)
         )
-    
-    # args.dim = [3, 32, 32]
 
     train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
         batch_size=args.batch_size,
