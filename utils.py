@@ -110,11 +110,11 @@ def process_args(args):
             raise ValueError('Unknown synthetic dataset')
     
     args.out_dir += '_' + str(args.dataset)
-    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim) + ' AvgPool'
+    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim) + ' MaxPool'
 
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
-    args.out_dir += '_' + str(args.dim) + '_AvgPool'
+    args.out_dir += '_' + str(args.dim) + '_MaxPool'
     args.out_dir += '_' + str(args.lr_max)
     args.out_dir += '_train_size=' + str(args.train_size)
 
@@ -187,12 +187,12 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
 def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
-        mean = cifar10_mean if dim is None else cifar10_avgpool_mean
-        std = cifar10_std if dim is None else cifar10_avgpool_std
+        mean = cifar10_mean if dim is None else cifar10_maxpool_mean
+        std = cifar10_std if dim is None else cifar10_maxpool_std
     elif dataset_name == 'cifar100':
         dataset_func = datasets.CIFAR100
-        mean = cifar100_mean if dim is None else cifar100_avgpool_mean
-        std = cifar100_std if dim is None else cifar100_avgpool_std
+        mean = cifar100_mean if dim is None else cifar100_maxpool_mean
+        std = cifar100_std if dim is None else cifar100_maxpool_std
     elif dataset_name == 'mnist':
         dataset_func = datasets.MNIST
         mean = mnist_mean
