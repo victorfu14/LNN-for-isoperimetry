@@ -23,16 +23,17 @@ This repo utilize SOC structure (https://github.com/singlasahil14/SOC) to verify
 Real world datasets:
 ```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --dataset DATASET```
 
-Synthetic distributional datasets, such as Gaussian distribution:
-```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetc SYN --syn-data SYN_DATA```
+Synthetic distribution datasets, such as Gaussian distribution, add ```--synthetic``` flag:
+```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetic --dataset DATASET```
 
 - CONV: bcop, cayley, soc
-- ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
-- BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
+- ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2).
+- BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8, represents the depth of neural network
 - Use ```--lln``` to enable last layer normalization
-- DATASET: cifar10/cifar100.
-- SYN: ```True/False```
-- SYN_DATA: gaussian
+- DATASET: cifar10/cifar100/gaussian/mnist/cifar5m.
+
+For ```cifar5m```, the result is computed for a certain class. Please specify using ```--label LABEL``` where
+LABEL is integers from 0 to 9
 
 ## Citations
 
