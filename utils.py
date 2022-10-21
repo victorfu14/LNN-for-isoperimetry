@@ -10,6 +10,7 @@ import logging
 import argparse
 import os
 import json
+from functools import partial
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -33,12 +34,10 @@ lower_limit = ((0 - mu)/ std)
 
 formatter = logging.Formatter('%(message)s')
 
-# epoch_store_list = [3]
 epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150] 
 epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150]
-# epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
-# epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
-# epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
+# epoch_eval_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+# epoch_eval_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
 def setup_logger(name, log_file, level=logging.INFO):
     """To setup as many loggers as you want"""
@@ -61,14 +60,12 @@ def get_args():
     parser.add_argument('--dim', nargs='*', default=None, type=int)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
-    # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
-    # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--lr-min', default=0., type=float)
-    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
@@ -88,8 +85,9 @@ def get_args():
 
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist'],
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist', 'cifar5m'],
                         help='dataset to use for training')
+    parser.add_argument('--cifar5m-label', default=None, type=int, choices=[i for i in range(10)])
 
     # Other specifications
     parser.add_argument('--epsilon', default=36, type=int)
@@ -107,13 +105,22 @@ def process_args(args):
             args.syn_func = np.random.multivariate_normal 
         else:
             raise ValueError('Unknown synthetic dataset')
+        
+    if args.debug:
+        args.out_dir = 'debug'
     
     args.out_dir += '_' + str(args.dataset)
-    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim)
-
+    args.run_name = str(args.dataset)
+    if args.cifar5m_label is not None:
+        args.out_dir += '_' + str(args.cifar5m_label)
+        args.run_name += ' label=' + str(args.cifar5m_label)
+   
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
-    args.out_dir += '_' + str(args.dim)
+    args.run_name += ' block=' + str(args.block_size)
+    if args.dim:
+        args.out_dir += '_' + str(args.dim)
+        args.run_name += ' dim=' + str(args.dim)
     args.out_dir += '_' + str(args.lr_max)
     args.out_dir += '_train_size=' + str(args.train_size)
 
@@ -184,29 +191,30 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     return train_loader_1, train_loader_2, test_loader
 
 class CIFAR5M(Dataset):
-    def __init__(self, dir_, label, transform, train=True):
+    def __init__(self, dir_, label, transform, train=True, download=False):
         super(Dataset, self).__init__()
         assert 0 <= label <= 9
         self.label = label
         self.dir_ = dir_
         self.transform = transform
+        self.train = train
         dataset = cifar_5m(dir_, label=self.label)
-        self.data = dataset['X']
-        self.targets = dataset['Y']
+        self.data = dataset['X'] if self.train else []
+        self.targets = dataset['Y'] if self.train else []
         
     def __len__(self):
-        return self.data.shape[0]
+        return len(self.data)
         
     def __getitem__(self, index):
-        assert 0 <= index <= self.__len__
+        assert 0 <= index <= self.__len__()
         img = self.data[index]
         if self.transform:
             img = self.transform(img)
         return img, self.targets[index]
 
-def cifar_5m(dir_, label=0, train=True):
+def cifar_5m(dir_, label=0):
     merged_data = {'X': [], 'Y': []}
-    for i in range(6):
+    for i in range(1):
         file = os.path.join(dir_, 'cifar5m_part' + str(i) + '.npz')
         data_part = np.load(file)
         for (x, y) in zip(data_part['X'], data_part['Y']):
@@ -218,7 +226,10 @@ def cifar_5m(dir_, label=0, train=True):
     merged_data['Y'] = np.array(merged_data['Y']) 
     return merged_data
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None, label=None):
+def cifar5m_init(dir_, label, transform, train, download):
+    return CIFAR5M(dir_, label, transform, train)
+
+def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=None, label=None):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean if dim is None else cifar10_maxpool_mean
@@ -231,31 +242,23 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         dataset_func = datasets.MNIST
         mean = mnist_mean
         std = mnist_std
-    elif dataset_name == 'cifar-5m':
+    elif dataset_name == 'cifar5m':
         assert label is not None
-        f = open('cifar-5m.json')
+        f = open('cifar5m.json')
         data = json.load(f)
         mean = data['cifar-5m'][label]['mean']
         std = data['cifar-5m'][label]['std']
+        dataset_func = partial(cifar5m_init, label=label)
 
 
-    if normalize:
-        train_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
-    else:
-        train_transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-
+    train_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+    test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
     if dataset_name == 'mnist':
         train_transform = transforms.Compose([transforms.Pad(2), train_transform])
         test_transform = transforms.Compose([transforms.Pad(2), test_transform])
@@ -267,9 +270,7 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         dir_, train=False, transform=test_transform, download=True)
 
     total_len = len(train_dataset.data) + len(test_dataset.data)
-
     total_set = torch.utils.data.ConcatDataset([train_dataset, test_dataset])
-
     train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
         total_set, 
         [train_size, train_size, total_len - 2 * train_size]

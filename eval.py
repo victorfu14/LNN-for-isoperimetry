@@ -108,14 +108,15 @@ def main():
         project='Isoperimetry',
         job_type='eval',
         name=args.run_name,
-        config = vars(args)
+        config=vars(args)
     )
     
     _, _, test_loader = get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
-        train_size = args.train_size, 
+        train_size=args.train_size, 
+        label=args.cifar5m_label
     ) if args.synthetic == False else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,

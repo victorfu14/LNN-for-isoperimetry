@@ -24,8 +24,6 @@ def init_model(args):
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
                        lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
-    # summary(model, input_size=(128, 3, 32, 32))
-    # summary(model, input_size=(128, 1, 28, 28))
     return model
 
 def main():
@@ -41,10 +39,8 @@ def main():
             project='Isoperimetry', 
             job_type='train',
             name=args.run_name,
-            config = vars(args)
+            config=vars(args)
         )
-    
-    # args.dim = [3, 32, 32]
 
     train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
         batch_size=args.batch_size,
@@ -55,7 +51,8 @@ def main():
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
-        train_size = args.train_size, 
+        train_size=args.train_size, 
+        label=args.cifar5m_label
     )
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -97,7 +94,7 @@ def main():
 
     lr_steps = args.epochs
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
+        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
