@@ -12,14 +12,12 @@ from apex import amp
 from utils import *
 from lip_convnets import LipConvNet
 
-from torchinfo import summary
-
 
 def init_model(args):
     args.in_planes = 1 if args.dataset == 'mnist' else 3
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
-                       lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
+                       lln=args.lln, in_planes=args.in_planes)
     # summary(model, input_size=(128, 3, 32, 32))
     # summary(model, input_size=(128, 1, 28, 28))
     return model
@@ -45,8 +43,9 @@ def main():
         batch_size=args.batch_size,
         generate=args.syn_func,
         dim=args.dim,
+        intrinsic_dim=args.intrinsic_dim,
         train_size=args.train_size,
-    ) if args.synthetic else get_loaders(
+    ) if args.dataset == 'gaussian' else get_loaders(
         args.data_dir,
         args.batch_size,
         args.dataset,
@@ -112,7 +111,7 @@ def main():
         train_n = 0
 
         for _, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            if args.synthetic == False:
+            if args.dataset != 'gaussian':
                 X_1, X_2 = X_1[0], X_2[0]
 
             X_1, X_2 = X_1.cuda(), X_2.cuda()
@@ -144,20 +143,13 @@ def main():
         lr = scheduler.get_last_lr()[0]
 
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
-                          epoch, epoch_time - start_epoch_time, lr, train_loss)
-
+                    epoch, epoch_time - start_epoch_time, lr, train_loss)
+        
         if not args.debug:
             wandb.log({"loss": train_loss, "lr": lr})
             wandb.watch(model)
 
-        train_loss /= train_n
-        scheduler.step(train_loss)
-        lr = scheduler._last_lr[0]
-
-        logger.info('%d \t %.1f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss)
-        wandb.log({"loss": train_loss, "lr": lr})
-
+        torch.save(model.state_dict(), last_model_path)
         trainer_state_dict = {'epoch': epoch, 'optimizer_state_dict': opt.state_dict()}
         torch.save(trainer_state_dict, last_opt_path)
 

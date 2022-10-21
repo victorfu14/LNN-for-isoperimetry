@@ -27,7 +27,7 @@ def init_model(args):
     args.in_planes = 1 if args.dataset == 'mnist' else 3
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
-                       lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
+                       lln=args.lln, in_planes=args.in_planes)
     return model
 
 
@@ -44,7 +44,7 @@ def eval(args, epoch, model_path, test_loader):
         model_test.eval() if epoch != 0 else model_test.train()
 
         start_test_time = time.time()
-        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 20)
+        losses_arr = random_evaluate(args.dataset, test_loader, model_test, test_size, 20)
         total_time = time.time() - start_test_time
         test_loss = np.mean(np.abs(losses_arr))
         loss[test_size] = [[val, epoch] for val in losses_arr]
@@ -120,10 +120,11 @@ def main():
         args.batch_size,
         args.dataset,
         train_size=args.train_size,
-    ) if args.synthetic == False else get_synthetic_loaders(
+    ) if args.dataset != 'gaussian' else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,
         dim=args.dim,
+        intrinsic_dim=args.intrinsic_dim,
         train_size=args.train_size,
     )
 

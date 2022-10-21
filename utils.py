@@ -1,3 +1,4 @@
+from turtle import shape
 from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
 from skew_ortho_conv import SOC
 from block_ortho_conv import BCOP
@@ -62,8 +63,8 @@ def get_args():
 
     # isoperimetry arguments
     parser.add_argument('--train-size', default=10000, type=int)
-    parser.add_argument('--synthetic', action='store_true')
     parser.add_argument('--dim', nargs='*', default=None, type=int)
+    parser.add_argument('--intrinsic-dim', default=3072, type=int)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
     # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
@@ -108,11 +109,8 @@ def process_args(args):
     if args.conv_layer == 'cayley' and args.opt_level == 'O2':
         raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
 
-    if args.synthetic:
-        if args.dataset == 'gaussian':
-            args.syn_func = np.random.multivariate_normal
-        else:
-            raise ValueError('Unknown synthetic dataset')
+    if args.dataset == 'gaussian':
+        args.syn_func = np.random.multivariate_normal
 
     args.out_dir += '_' + str(args.dataset)
     args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim)
@@ -150,18 +148,24 @@ def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
 
-def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], train_size=10000, test_size=40000):
+def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072,  train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
-    x_1 = generate(
-        mean=np.zeros(np.prod(total_dim)),
-        cov=np.identity(np.prod(total_dim)),
+    z_1 = generate(
+        mean=np.zeros(intrinsic_dim),
+        cov=np.identity(intrinsic_dim),
         size=train_size
     )
-    x_2 = generate(
-        mean=np.zeros(total_dim),
-        cov=np.identity(total_dim),
+    z_2 = generate(
+        mean=np.zeros(intrinsic_dim),
+        cov=np.identity(intrinsic_dim),
         size=train_size
     )
+    x_1, x_2 = np.empty([train_size, total_dim]), np.empty([train_size, total_dim])
+    for i, z in enumerate(z_1):
+        x_1[i] = np.concatenate((z, z), axis=None)
+    for i, z in enumerate(z_2):
+        x_2[i] = np.concatenate((z, z), axis=None)
+    print(x_1.shape)
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
     train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
     train_loader_1 = torch.utils.data.DataLoader(
@@ -178,11 +182,14 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         pin_memory=True,
         num_workers=2,
     )
-    test = generate(
-        mean=np.zeros(total_dim),
-        cov=np.identity(total_dim),
+    t_1 = generate(
+        mean=np.zeros(intrinsic_dim),
+        cov=np.identity(intrinsic_dim),
         size=test_size
     )
+    test = np.empty([test_size, total_dim])
+    for i, t in enumerate(t_1):
+        test[i] = np.concatenate((t, t), axis=None)
     test_set = torch.reshape(torch.tensor(test).float(), [test_size] + dim)
     test_loader = torch.utils.data.DataLoader(
         dataset=test_set,
@@ -311,7 +318,7 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
     return train_loader_1, train_loader_2, test_loader
 
 
-def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
+def random_evaluate(dataset, data_loader, model, size, num_sample, loss='l1'):
     losses_list = []
     # model.eval()
 
@@ -320,7 +327,7 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
 
         with torch.no_grad():
             for _, X in enumerate(data_loader):
-                if synthetic == False:
+                if dataset != 'gaussian':
                     X = X[0]
                 X = X.cuda().float()
                 output1 = model(X[sample[0]])

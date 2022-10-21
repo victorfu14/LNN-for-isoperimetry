@@ -33,7 +33,7 @@ class LipBlock(nn.Module):
 
 class LipConvNet(nn.Module):
     def __init__(self, conv_name, activation, init_channels=32, block_size=1,
-                 num_classes=1, in_planes=3, input_side=32, lln=False, syn=False):
+                 num_classes=1, in_planes=3, input_side=32, lln=False):
         super(LipConvNet, self).__init__()
         self.lln = lln
         self.in_planes = in_planes
@@ -46,15 +46,15 @@ class LipConvNet(nn.Module):
         # else:
         #     self.layer0 = nn.MaxPool2d(2, stride=2)
         self.layer1 = self._make_layer(init_channels, block_size, conv_layer,
-                                    activation, stride=2, kernel_size=3)
+                                       activation, stride=2, kernel_size=3)
         self.layer2 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                    activation, stride=2, kernel_size=3)
+                                       activation, stride=2, kernel_size=3)
         self.layer3 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                    activation, stride=2, kernel_size=3)
+                                       activation, stride=2, kernel_size=3)
         self.layer4 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                    activation, stride=2, kernel_size=3)
+                                       activation, stride=2, kernel_size=3)
         self.layer5 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                    activation, stride=2, kernel_size=1)
+                                       activation, stride=2, kernel_size=1)
 
         flat_size = input_side // 32
         flat_features = flat_size * flat_size * self.in_planes

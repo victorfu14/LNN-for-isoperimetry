@@ -16,9 +16,9 @@
 #SBATCH --gres=gpu:1
 
 
-#SBATCH --time=3-00:00:00
+#SBATCH --time=1-00:00:00
 
-#SBATCH --account=vvh0
+#SBATCH --account=vvh1
 
 #SBATCH --output=/home/%u/Project/ISO/logs/%x-%j.log
 

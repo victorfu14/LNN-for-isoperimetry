@@ -1,7 +1,6 @@
 # LNN for Isoperimetry
 
-This repo utilize SOC structure (https://github.com/singlasahil14/SOC) to verify whether real world datasets satisfy isoperimety properties proposed by (https://arxiv.org/abs/2105.12806).
-
+This repo utilize SOC structure (<https://github.com/singlasahil14/SOC>) to verify whether real world datasets satisfy isoperimety properties proposed by (<https://arxiv.org/abs/2105.12806>).
 
 # Skew Orthogonal Convolutions
 
@@ -10,7 +9,6 @@ This repo utilize SOC structure (https://github.com/singlasahil14/SOC) to verify
 - **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
 - **Householder Activations (HH)** improve the performance of deeper networks.
 
-<<<<<<< HEAD
 > The project can be found at [here](https://wandb.ai/pbb/iso).
 
 ## TODO
@@ -24,8 +22,6 @@ This repo utilize SOC structure (https://github.com/singlasahil14/SOC) to verify
 - [x] Use median
 - [ ] Use linear programming to check
 
-=======
->>>>>>> 1492c1b3089155defe7267a735703ec0c0b9d90a
 ## Prerequisites
 
 - Python 3.7 or 3.8
