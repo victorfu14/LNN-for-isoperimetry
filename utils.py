@@ -113,7 +113,8 @@ def process_args(args):
         args.syn_func = np.random.multivariate_normal
 
     args.out_dir += '_' + str(args.dataset)
-    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim)
+    args.run_name = str(args.dataset) + ' b=' + str(args.block_size) + ' D=' + \
+        str(args.dim) + ' ID=' + str(args.intrinsic_dim)
 
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
@@ -161,10 +162,13 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         size=train_size
     )
     x_1, x_2 = np.empty([train_size, total_dim]), np.empty([train_size, total_dim])
-    for i, z in enumerate(z_1):
-        x_1[i] = np.concatenate((z, z), axis=None)
-    for i, z in enumerate(z_2):
-        x_2[i] = np.concatenate((z, z), axis=None)
+    if intrinsic_dim == 1536:
+        for i, z in enumerate(z_1):
+            x_1[i] = np.concatenate((z, z), axis=None)
+        for i, z in enumerate(z_2):
+            x_2[i] = np.concatenate((z, z), axis=None)
+    else:
+        x_1, x_2 = z_1, z_2
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
     train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
     train_loader_1 = torch.utils.data.DataLoader(
@@ -181,14 +185,20 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         pin_memory=True,
         num_workers=2,
     )
+
     t_1 = generate(
         mean=np.zeros(intrinsic_dim),
         cov=np.identity(intrinsic_dim),
         size=test_size
     )
+
     test = np.empty([test_size, total_dim])
-    for i, t in enumerate(t_1):
-        test[i] = np.concatenate((t, t), axis=None)
+    if intrinsic_dim == 1536:
+        for i, t in enumerate(t_1):
+            test[i] = np.concatenate((t, t), axis=None)
+    else:
+        test = t_1
+
     test_set = torch.reshape(torch.tensor(test).float(), [test_size] + dim)
     test_loader = torch.utils.data.DataLoader(
         dataset=test_set,
