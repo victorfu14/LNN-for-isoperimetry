@@ -58,6 +58,7 @@ def evaluate_model(args, test_loader):
     eval_logfile = os.path.join(args.out_dir, 'eval.log')
     if os.path.exists(eval_logfile):
         os.remove(eval_logfile)
+
     eval_logger = setup_logger('eval_logger', eval_logfile)
     eval_logger.info(args)
 

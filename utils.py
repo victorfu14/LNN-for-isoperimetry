@@ -165,7 +165,6 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         x_1[i] = np.concatenate((z, z), axis=None)
     for i, z in enumerate(z_2):
         x_2[i] = np.concatenate((z, z), axis=None)
-    print(x_1.shape)
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
     train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
     train_loader_1 = torch.utils.data.DataLoader(
