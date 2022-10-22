@@ -119,6 +119,7 @@ def process_args(args):
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.dim)
+    args.out_dir += '_' + str(args.intrinsic_dim)
     args.out_dir += '_' + str(args.lr_max)
     args.out_dir += '_train_size=' + str(args.train_size)
 
@@ -167,6 +168,16 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
             x_1[i] = np.concatenate((z, z), axis=None)
         for i, z in enumerate(z_2):
             x_2[i] = np.concatenate((z, z), axis=None)
+    elif intrinsic_dim == 1024:
+        for i, z in enumerate(z_1):
+            x_1[i] = np.concatenate((z, z, z), axis=None)
+        for i, z in enumerate(z_2):
+            x_2[i] = np.concatenate((z, z, z), axis=None)
+    elif intrinsic_dim == 768:
+        for i, z in enumerate(z_1):
+            x_1[i] = np.concatenate((z, z, z, z), axis=None)
+        for i, z in enumerate(z_2):
+            x_2[i] = np.concatenate((z, z, z, z), axis=None)
     else:
         x_1, x_2 = z_1, z_2
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
@@ -196,6 +207,12 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     if intrinsic_dim == 1536:
         for i, t in enumerate(t_1):
             test[i] = np.concatenate((t, t), axis=None)
+    elif intrinsic_dim == 1024:
+        for i, t in enumerate(t_1):
+            test[i] = np.concatenate((t, t, t), axis=None)
+    elif intrinsic_dim == 768:
+        for i, t in enumerate(t_1):
+            test[i] = np.concatenate((t, t, t, t), axis=None)
     else:
         test = t_1
 
