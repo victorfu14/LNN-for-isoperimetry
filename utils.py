@@ -65,6 +65,7 @@ def get_args():
     parser.add_argument('--train-size', default=10000, type=int)
     parser.add_argument('--dim', nargs='*', default=None, type=int)
     parser.add_argument('--intrinsic-dim', default=3072, type=int)
+    parser.add_argument('--rand-perm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
     # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
@@ -120,6 +121,8 @@ def process_args(args):
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.dim)
     args.out_dir += '_' + str(args.intrinsic_dim)
+    if args.rand_perm:
+        args.out_dir += '_' + 'rand_perm'
     args.out_dir += '_' + str(args.lr_max)
     args.out_dir += '_train_size=' + str(args.train_size)
 
@@ -150,7 +153,7 @@ def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
 
-def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072,  train_size=10000, test_size=40000):
+def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072, rand_perm=False,  train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
     z_1 = generate(
         mean=np.zeros(intrinsic_dim),
@@ -165,24 +168,32 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     x_1, x_2 = np.empty([train_size, total_dim]), np.empty([train_size, total_dim])
     if intrinsic_dim == 1536:
         for i, z in enumerate(z_1):
-            x_1[i] = np.concatenate((z, z), axis=None)
+            x = np.concatenate((z, z), axis=None)
+            x_1[i] = np.random.permutation(x) if rand_perm else x
         for i, z in enumerate(z_2):
-            x_2[i] = np.concatenate((z, z), axis=None)
+            x = np.concatenate((z, z), axis=None)
+            x_2[i] = np.random.permutation(x) if rand_perm else x
     elif intrinsic_dim == 1024:
         for i, z in enumerate(z_1):
-            x_1[i] = np.concatenate((z, z, z), axis=None)
+            x = np.concatenate((z, z, z), axis=None)
+            x_1[i] = np.random.permutation(x) if rand_perm else x
         for i, z in enumerate(z_2):
-            x_2[i] = np.concatenate((z, z, z), axis=None)
+            x = np.concatenate((z, z, z), axis=None)
+            x_2[i] = np.random.permutation(x) if rand_perm else x
     elif intrinsic_dim == 768:
         for i, z in enumerate(z_1):
-            x_1[i] = np.concatenate((z, z, z, z), axis=None)
+            x = np.concatenate((z, z, z, z), axis=None)
+            x_1[i] = np.random.permutation(x) if rand_perm else x
         for i, z in enumerate(z_2):
-            x_2[i] = np.concatenate((z, z, z, z), axis=None)
+            x = np.concatenate((z, z, z, z), axis=None)
+            x_2[i] = np.random.permutation(x) if rand_perm else x
     elif intrinsic_dim == 512:
         for i, z in enumerate(z_1):
-            x_1[i] = np.concatenate((z, z, z, z, z, z), axis=None)
+            x = np.concatenate((z, z, z, z, z, z), axis=None)
+            x_1[i] = np.random.permutation(x) if rand_perm else x
         for i, z in enumerate(z_2):
-            x_2[i] = np.concatenate((z, z, z, z, z, z), axis=None)
+            x = np.concatenate((z, z, z, z, z, z), axis=None)
+            x_2[i] = np.random.permutation(x) if rand_perm else x
     else:
         x_1, x_2 = z_1, z_2
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
@@ -211,16 +222,20 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     test = np.empty([test_size, total_dim])
     if intrinsic_dim == 1536:
         for i, t in enumerate(t_1):
-            test[i] = np.concatenate((t, t), axis=None)
+            x = np.concatenate((t, t), axis=None)
+            test[i] = np.random.permutation(x) if rand_perm else x
     elif intrinsic_dim == 1024:
         for i, t in enumerate(t_1):
-            test[i] = np.concatenate((t, t, t), axis=None)
+            x = np.concatenate((t, t, t), axis=None)
+            test[i] = np.random.permutation(x) if rand_perm else x
     elif intrinsic_dim == 768:
         for i, t in enumerate(t_1):
-            test[i] = np.concatenate((t, t, t, t), axis=None)
+            x = np.concatenate((t, t, t, t), axis=None)
+            test[i] = np.random.permutation(x) if rand_perm else x
     elif intrinsic_dim == 512:
         for i, t in enumerate(t_1):
-            test[i] = np.concatenate((t, t, t, t, t, t), axis=None)
+            x = np.concatenate((t, t, t, t, t, t), axis=None)
+            test[i] = np.random.permutation(x) if rand_perm else x
     else:
         test = t_1
 

@@ -126,6 +126,7 @@ def main():
         generate=args.syn_func,
         dim=args.dim,
         intrinsic_dim=args.intrinsic_dim,
+        rand_perm=args.rand_perm,
         train_size=args.train_size,
     )
 
