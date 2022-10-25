@@ -38,8 +38,8 @@ lower_limit = ((0 - mu) / std)
 formatter = logging.Formatter('%(message)s')
 
 # epoch_store_list = [3]
-epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350]
-epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350]
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350, 399]
+epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 399]
 # epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
@@ -117,7 +117,6 @@ def process_args(args):
     args.run_name = str(args.dataset) + ' b=' + str(args.block_size) + ' D=' + \
         str(args.dim) + ' ID=' + str(args.intrinsic_dim)
 
-    args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.dim)
     args.out_dir += '_' + str(args.intrinsic_dim)
@@ -155,6 +154,7 @@ def clamp(X, lower_limit, upper_limit):
 
 def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072, rand_perm=False,  train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
+    perm = np.random.permutation
     z_1 = generate(
         mean=np.zeros(intrinsic_dim),
         cov=np.identity(intrinsic_dim),
@@ -169,31 +169,31 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     if intrinsic_dim == 1536:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z), axis=None)
-            x_1[i] = np.random.permutation(x) if rand_perm else x
+            x_1[i] = perm(x) if rand_perm else x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z), axis=None)
-            x_2[i] = np.random.permutation(x) if rand_perm else x
+            x_2[i] = perm(x) if rand_perm else x
     elif intrinsic_dim == 1024:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z, z), axis=None)
-            x_1[i] = np.random.permutation(x) if rand_perm else x
+            x_1[i] = perm(x) if rand_perm else x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z, z), axis=None)
-            x_2[i] = np.random.permutation(x) if rand_perm else x
+            x_2[i] = perm(x) if rand_perm else x
     elif intrinsic_dim == 768:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z, z, z), axis=None)
-            x_1[i] = np.random.permutation(x) if rand_perm else x
+            x_1[i] = perm(x) if rand_perm else x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z, z, z), axis=None)
-            x_2[i] = np.random.permutation(x) if rand_perm else x
+            x_2[i] = perm(x) if rand_perm else x
     elif intrinsic_dim == 512:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z, z, z, z, z), axis=None)
-            x_1[i] = np.random.permutation(x) if rand_perm else x
+            x_1[i] = perm(x) if rand_perm else x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z, z, z, z, z), axis=None)
-            x_2[i] = np.random.permutation(x) if rand_perm else x
+            x_2[i] = perm(x) if rand_perm else x
     else:
         x_1, x_2 = z_1, z_2
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
@@ -223,19 +223,19 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     if intrinsic_dim == 1536:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t), axis=None)
-            test[i] = np.random.permutation(x) if rand_perm else x
+            test[i] = perm(x) if rand_perm else x
     elif intrinsic_dim == 1024:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t, t), axis=None)
-            test[i] = np.random.permutation(x) if rand_perm else x
+            test[i] = perm(x) if rand_perm else x
     elif intrinsic_dim == 768:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t, t, t), axis=None)
-            test[i] = np.random.permutation(x) if rand_perm else x
+            test[i] = perm(x) if rand_perm else x
     elif intrinsic_dim == 512:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t, t, t, t, t), axis=None)
-            test[i] = np.random.permutation(x) if rand_perm else x
+            test[i] = perm(x) if rand_perm else x
     else:
         test = t_1
 
