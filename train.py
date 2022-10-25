@@ -144,8 +144,8 @@ def main():
         lr = scheduler.get_last_lr()[0]
 
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
-                    epoch, epoch_time - start_epoch_time, lr, train_loss)
-        
+                          epoch, epoch_time - start_epoch_time, lr, train_loss)
+
         if not args.debug:
             wandb.log({"loss": train_loss, "lr": lr})
             wandb.watch(model)

@@ -38,8 +38,8 @@ lower_limit = ((0 - mu) / std)
 formatter = logging.Formatter('%(message)s')
 
 # epoch_store_list = [3]
-epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350, 399]
-epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 399]
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350]
+epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400]
 # epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
