@@ -30,9 +30,9 @@ Synthetic distribution datasets, such as Gaussian distribution, add ```--synthet
 - ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2).
 - BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8, represents the depth of neural network
 - Use ```--lln``` to enable last layer normalization
-- DATASET: cifar10/cifar100/gaussian/mnist/cifar5m.
+- DATASET: cifar10/cifar100/mnist/cifar5m/gaussian, with the last one being synthetic
 
-For ```cifar5m```, the result is computed for a certain class. Please specify using ```--label LABEL``` where
+For ```cifar5m```, the result is computed for a certain class. Please specify using ```--cifar5m-label LABEL``` where
 LABEL is integers from 0 to 9
 
 ## Citations
