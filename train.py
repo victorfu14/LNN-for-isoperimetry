@@ -62,7 +62,7 @@ def main():
         src = os.path.join('./', f)
         dst = os.path.join(code_dir, f)
         if os.path.isfile(src):
-            if f[-3:] == '.py' or f[-3:] == '.sh':
+            if f[-3:] == '.py' or f[-3:] == '.sh' or f[-3:] == '.json':
                 copyfile(src, dst)
 
     train_logfile = os.path.join(args.out_dir, 'train.log')
@@ -95,6 +95,8 @@ def main():
     lr_steps = args.epochs
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
+    
+    # reduce on plateau scheduler
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
@@ -137,7 +139,7 @@ def main():
         epoch_time = time.time()
         train_loss /= train_n
 
-        # # reduce on plateau scheduler
+        # reduce on plateau scheduler
         # scheduler.step(train_loss)
         # lr = scheduler._last_lr[0]
 

@@ -16,3 +16,5 @@ mnist/
 *.txt
 debug*/
 Iso*/
+*_alt.py
+test_*
