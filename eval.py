@@ -44,7 +44,7 @@ def eval(args, epoch, model_path, test_loader):
         model_test.eval() if epoch != 0 else model_test.train()
 
         start_test_time = time.time()
-        losses_arr = random_evaluate(args.dataset, test_loader, model_test, test_size, 20)
+        losses_arr = random_evaluate(args.dataset, test_loader, model_test, test_size, 20, sanity_check=args.sanity)
         total_time = time.time() - start_test_time
         test_loss = np.mean(np.abs(losses_arr))
         loss[test_size] = [[val, epoch] for val in losses_arr]

@@ -39,7 +39,7 @@ formatter = logging.Formatter('%(message)s')
 
 # epoch_store_list = [3]
 epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350]
-epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400]
+epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200]
 # epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
@@ -68,6 +68,7 @@ def get_args():
     parser.add_argument('--rand-perm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
+    parser.add_argument('--sanity', action='store_true')
     # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
     # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
 
@@ -113,6 +114,7 @@ def process_args(args):
     if args.dataset == 'gaussian':
         args.syn_func = np.random.multivariate_normal
 
+    args.out_dir = os.path.join("/scratch", "vvh_root", "vvh1", "pbb", "Project", "ISO", args.out_dir)
     args.out_dir += '_' + str(args.dataset)
     args.run_name = str(args.dataset) + ' b=' + str(args.block_size) + ' D=' + \
         str(args.dim) + ' ID=' + str(args.intrinsic_dim)
@@ -367,9 +369,15 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
     return train_loader_1, train_loader_2, test_loader
 
 
-def random_evaluate(dataset, data_loader, model, size, num_sample, loss='l1'):
+def Lipschitzness(input1, input2, output1, output2):
+    # L2 norm
+    output_diff = torch.norm(output1 - output2, p=2)
+    input_diff = torch.norm(input1 - input2, p=2)
+    return output_diff / input_diff
+
+
+def random_evaluate(dataset, data_loader, model, size, num_sample, loss='l1', sanity_check=False):
     losses_list = []
-    # model.eval()
 
     for _ in range(num_sample):
         sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
@@ -381,6 +389,13 @@ def random_evaluate(dataset, data_loader, model, size, num_sample, loss='l1'):
                 X = X.cuda().float()
                 output1 = model(X[sample[0]])
                 output2 = model(X[sample[1]])
+
+                if sanity_check:
+                    Lip = Lipschitzness(X[sample[0]], X[sample[1]], output1, output2)
+                    if Lip > 1:
+                        print('Model is not 1-Lipschitz')
+                        print(Lip)
+
                 loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss).cpu().numpy()]))
                 losses_list.append(loss)
 
