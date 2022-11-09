@@ -11,6 +11,7 @@ import argparse
 import os
 import json
 from functools import partial
+import scipy
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -19,6 +20,9 @@ cifar100_std = (0.2675, 0.2565, 0.2761)
 
 mnist_mean = (0.1307)
 mnist_std = (0.3081)
+
+mnist_pad_mean = (0.10003699)
+mnist_pad_std = (0.27521738)
 
 cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
 cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
@@ -35,7 +39,8 @@ lower_limit = ((0 - mu)/ std)
 formatter = logging.Formatter('%(message)s')
 
 epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150] 
-epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150]
+epoch_eval_list = [5, 10, 25, 50, 75, 100, 150]
+# epoch_eval_list = [10, 50, 100, 150]
 # epoch_eval_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_eval_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
@@ -106,8 +111,8 @@ def process_args(args):
         else:
             raise ValueError('Unknown synthetic dataset')
         
-    if args.debug:
-        args.out_dir = 'debug'
+    # if args.debug:
+    #     args.out_dir = 'debug'
     
     args.out_dir += '_' + str(args.dataset)
     args.run_name = str(args.dataset)
@@ -240,8 +245,8 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         std = cifar100_std if dim is None else cifar100_maxpool_std
     elif dataset_name == 'mnist':
         dataset_func = datasets.MNIST
-        mean = mnist_mean
-        std = mnist_std
+        mean = mnist_pad_mean
+        std = mnist_pad_std
     elif dataset_name == 'cifar5m':
         assert label is not None
         f = open('cifar5m.json')
@@ -319,6 +324,31 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
             losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
 
     return losses_array
+
+def moment_evaluate(synthetic, data_loader, model, size, num_sample):
+    model.eval()
+    moments_dic = {}
+    moments_p = [2, 3, 4, 5, 6, 8, 10, 15, 20]
+    for p in moments_p:
+        moments_dic[p] = []
+
+    for _ in range(num_sample):
+        sample = np.random.choice(len(data_loader.dataset), size=size, replace=False)
+
+        with torch.no_grad():
+            for _, X in enumerate(data_loader):
+                if synthetic == False:
+                    X = X[0]
+                X = X.cuda().float()
+                output = model(X[sample]).cpu()
+                moments = []
+                for p in moments_p:
+                    moments.append(scipy.stats.moment(output, moment=p)[0] ** (1 / p))
+
+            for idx, p in enumerate(moments_p):
+                moments_dic[p].append(moments[idx])
+
+    return moments_dic
 
 
 from cayley_ortho_conv import Cayley, CayleyLinear
