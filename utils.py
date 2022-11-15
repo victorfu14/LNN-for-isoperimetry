@@ -328,7 +328,7 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
 def moment_evaluate(synthetic, data_loader, model, size, num_sample):
     model.eval()
     moments_dic = {}
-    moments_p = [2, 3, 4, 5, 6, 8, 10, 15, 20]
+    moments_p = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
     for p in moments_p:
         moments_dic[p] = []
 
