@@ -112,7 +112,7 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    args.run_name += ' moment eval'
+    args.run_name += ' adam moment eval'
 
     if not args.debug:
         wandb.init(
