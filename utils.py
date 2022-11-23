@@ -64,7 +64,7 @@ def get_args():
     # isoperimetry arguments
     parser.add_argument('--train-size', default=10000, type=int)
     parser.add_argument('--dim', nargs='*', default=None, type=int)
-    parser.add_argument('--intrinsic-dim', default=3072, type=int)
+    parser.add_argument('--duplicated', default=1, type=int)
     parser.add_argument('--rand-perm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
@@ -117,11 +117,11 @@ def process_args(args):
     args.out_dir = os.path.join("/scratch", "vvh_root", "vvh1", "pbb", "Project", "ISO", args.out_dir)
     args.out_dir += '_' + str(args.dataset)
     args.run_name = str(args.dataset) + ' b=' + str(args.block_size) + ' D=' + \
-        str(args.dim) + ' ID=' + str(args.intrinsic_dim)
+        str(args.dim) + ' ID=' + str(args.duplicated) + 'x'
 
     args.out_dir += '_' + str(args.block_size)
     args.out_dir += '_' + str(args.dim)
-    args.out_dir += '_' + str(args.intrinsic_dim)
+    args.out_dir += '_' + str(args.duplicated) + 'x'
     if args.rand_perm:
         args.out_dir += '_' + 'rand_perm'
     args.out_dir += '_' + str(args.lr_max)
@@ -132,6 +132,7 @@ def process_args(args):
 
     # Only need R^d -> R lipschitz functions
     args.num_classes = 1
+    args.intrinsic_dim = np.prod(args.dim) // args.duplicated
 
     return args
 
@@ -156,7 +157,7 @@ def clamp(X, lower_limit, upper_limit):
 
 def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072, rand_perm=False,  train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
-    perm = np.random.permutation
+    perm = np.random.RandomState(seed=38).permutation
     z_1 = generate(
         mean=np.zeros(intrinsic_dim),
         cov=np.identity(intrinsic_dim),

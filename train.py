@@ -35,7 +35,7 @@ def main():
         wandb.init(
             project='Isoperimetry',
             job_type='train',
-            name=args.run_name,
+            name='({}x) ID={}{}'.format(args.duplicated, args.intrinsic_dim, ' P' if args.rand_perm else ''),
             config=vars(args)
         )
 
