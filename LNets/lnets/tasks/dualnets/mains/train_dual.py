@@ -1,20 +1,19 @@
+from lnets.tasks.dualnets.visualize.visualize_dualnet import *
+from lnets.utils.training_getters import get_training_dirs
+from lnets.utils.misc import *
+from lnets.utils.seeding import set_experiment_seed
+from lnets.utils.saving_and_loading import *
+from lnets.utils.training_getters import get_optimizer, get_scheduler
+from lnets.utils.logging import Logger
+from lnets.trainers.trainer import Trainer
+from lnets.tasks.dualnets.distrib.load_distrib import load_distrib
+from lnets.utils.config import process_config
 from functools import partial
 from tqdm import tqdm
 
-#mpl.use('Agg')
+# mpl.use('Agg')
 import matplotlib.pyplot as plt
 plt.interactive(False)
-
-from lnets.utils.config import process_config
-from lnets.tasks.dualnets.distrib.load_distrib import load_distrib
-from lnets.trainers.trainer import Trainer
-from lnets.utils.logging import Logger
-from lnets.utils.training_getters import get_optimizer, get_scheduler
-from lnets.utils.saving_and_loading import *
-from lnets.utils.seeding import set_experiment_seed
-from lnets.utils.misc import *
-from lnets.utils.training_getters import get_training_dirs
-from lnets.tasks.dualnets.visualize.visualize_dualnet import *
 
 
 def train_dualnet(model, loaders, config):
@@ -27,6 +26,13 @@ def train_dualnet(model, loaders, config):
     # Get optimizer and learning rate scheduler.
     optimizer = get_optimizer(config, model.parameters())
     scheduler = get_scheduler(config, optimizer)
+
+    wandb.init(
+        project='Isoperimetry',
+        job_type='train',
+        name=config.exp_name,
+        config=vars(config)
+    )
 
     # Load pretrained model and the state of the optimizer when it was saved.
     if config.model.pretrained_best_path:
@@ -158,8 +164,7 @@ def train_dualnet(model, loaders, config):
 
     # Visualize the learned critic landscape.
     if config.visualize:
-        save_1_or_2_dim_dualnet_visualizations(model, dirs.figures_dir, config,
-                                               after_training=False)
+        save_1_or_2_dim_dualnet_visualizations(model, dirs.figures_dir, config, after_training=False)
 
     return test_state
 

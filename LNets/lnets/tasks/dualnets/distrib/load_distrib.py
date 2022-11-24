@@ -7,7 +7,6 @@ def load_distrib(config):
     distrib_loaders = dict()
 
     distrib_loaders['train'] = DistribLoader(config, mode="train")
-    distrib_loaders['validation'] = DistribLoader(config, mode="test")
     distrib_loaders['test'] = DistribLoader(config, mode="test")
 
     return distrib_loaders
@@ -44,8 +43,7 @@ class DistribLoader(object):
             if not isinstance(distrib2_samples, torch.Tensor):
                 distrib2_samples = torch.from_numpy(distrib2_samples).float()
 
-            return (distrib1_samples.float(),
-                    distrib2_samples.float())
+            return (distrib1_samples.float(), distrib2_samples.float())
         else:
             raise StopIteration
 

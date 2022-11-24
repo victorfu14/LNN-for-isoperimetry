@@ -1,7 +1,7 @@
 """
 Based on code from https://github.com/pytorch/tnt/blob/master/torchnet/trainers/trainers.py
 """
-
+import wandb
 
 class Trainer(object):
     def __init__(self):
@@ -60,6 +60,9 @@ class Trainer(object):
 
             # On epoch end.
             self.hook('on_end_epoch', state)
+            
+            wandb.log({"loss": state['loss']})
+            wandb.watch(model)
 
         # On training end.
         self.hook('on_end', state)
