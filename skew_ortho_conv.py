@@ -216,7 +216,7 @@ class SOC(nn.Module):
                               padding=(self.kernel_size//2, 
                                        self.kernel_size//2))/float(i)
             z = z + curr_z
-        
+
         if self.out_channels < self.in_channels:
             z = z[:, :self.out_channels, :, :]
             

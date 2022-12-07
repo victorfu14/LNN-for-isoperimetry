@@ -124,7 +124,7 @@ def main():
             config=vars(args)
         )
     
-    _, _, test_loader = get_loaders(
+    _, test_loader = get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 

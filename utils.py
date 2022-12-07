@@ -46,6 +46,11 @@ epoch_eval_list = [5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350]
 # epoch_eval_list = [10, 50, 100, 150]
 # epoch_eval_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_eval_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
+# epoch_store_list = [3]
+# epoch_store_list = [0, 5, 10, 25, 50, 75, 100, 150] 
+# epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
 def setup_logger(name, log_file, level=logging.INFO):
     """To setup as many loggers as you want"""
@@ -331,21 +336,23 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         test_dataset.data = test_dataset.data.float() + test_noise
 
     total_len = len(train_dataset.data) + len(test_dataset.data)
-    total_set = torch.utils.data.ConcatDataset([train_dataset, test_dataset])
-    train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
-        total_set, 
-        [train_size, train_size, total_len - 2 * train_size]
-    )
+    total_data = np.concatenate((train_dataset.data, test_dataset.data))
+    total_targets = np.random.choice([-1, 1], size=total_len)
 
-    train_loader_1 = torch.utils.data.DataLoader(
-        dataset=train_dataset_1,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=num_workers,
-    )
-    train_loader_2 = torch.utils.data.DataLoader(
-        dataset=train_dataset_2,
+    arr = np.arange(total_len)
+    np.random.shuffle(arr)
+
+    train_dataset.data = total_data[arr[:2 * train_size]] 
+    train_dataset.targets = total_targets[arr[:2 * train_size]] 
+    test_dataset.data = total_data[arr[2 * train_size:]] 
+    test_dataset.targets = total_targets[arr[2 * train_size:]] 
+    # train_dataset, test_dataset = torch.utils.data.random_split(
+    #     total_set, 
+    #     [train_size * 2, total_len - 2 * train_size]
+    # )
+
+    train_loader = torch.utils.data.DataLoader(
+        dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
@@ -358,7 +365,7 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         pin_memory=True,
         num_workers=2,
     )
-    return train_loader_1, train_loader_2, test_loader
+    return train_loader, test_loader
 
 def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
     losses_list = []

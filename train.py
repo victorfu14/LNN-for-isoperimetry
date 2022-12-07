@@ -24,6 +24,7 @@ def init_model(args):
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
                        lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
+    summary(model, input_size=(128, 3, 32, 32))
     return model
 
 def main():
@@ -46,12 +47,14 @@ def main():
             config=vars(args)
         )
 
-    train_loader_1, train_loader_2, test_loader = get_synthetic_loaders(
-        batch_size=args.batch_size,
-        generate=args.syn_func,
-        dim=args.dim,
-        train_size=args.train_size,
-    ) if args.synthetic else get_loaders(
+    # train_loader, test_loader = get_synthetic_loaders(
+    #     batch_size=args.batch_size,
+    #     generate=args.syn_func,
+    #     dim=args.dim,
+    #     train_size=args.train_size,
+    # ) if args.synthetic else 
+    
+    train_loader, test_loader = get_loaders(
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
@@ -99,7 +102,7 @@ def main():
         amp_args['master_weights'] = True
     model, opt = amp.initialize(model, opt, **amp_args)
 
-    criterion = isoLoss()
+    criterion = nn.MSELoss()
 
     lr_steps = args.epochs
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -128,26 +131,27 @@ def main():
         train_loss = 0
         train_n = 0
 
-        for _, (X_1, X_2) in enumerate(zip(train_loader_1, train_loader_2)):
-            if args.synthetic == False:
-                X_1, X_2 = X_1[0], X_2[0]
+        for _, (X, y) in enumerate(train_loader):
+            # if args.synthetic == False:
+            #     X_1, X_2 = X_1[0], X_2[0]
 
-            X_1, X_2 = X_1.cuda(), X_2.cuda()
+            X, y = X.cuda(), y.cuda().float()
 
-            output1, output2 = model(X_1), model(X_2)
-
+            # output1, output2 = model(X_1), model(X_2)
             # print(output1.size())
-        
-            ce_loss = criterion(output1, output2)
+            # ce_loss = criterion(output1, output2)
+            
+            output = model(X)
+            ce_loss = criterion(output[:, 0], y)
             loss = ce_loss
 
             opt.zero_grad()
             with amp.scale_loss(loss, opt) as scaled_loss:
                 scaled_loss.backward()
             opt.step()
-
-            train_loss += ce_loss * X_1.size(0)
-            train_n += X_1.size(0)
+            
+            train_loss += ce_loss * X.size(0)
+            train_n += X.size(0)
 
         epoch_time = time.time()
         train_loss /= train_n
