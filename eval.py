@@ -104,6 +104,9 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
+    if args.noise:
+        args.run_name += ' noisy'
+
     wandb.init(
         project='Isoperimetry',
         job_type='eval',
@@ -116,7 +119,8 @@ def main():
         args.batch_size, 
         args.dataset, 
         train_size=args.train_size, 
-        label=args.cifar5m_label
+        label=args.cifar5m_label,
+        add_noise=args.noise
     ) if args.synthetic == False else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,
