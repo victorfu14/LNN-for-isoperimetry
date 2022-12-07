@@ -45,29 +45,16 @@ class LipConvNet(nn.Module):
         #     self.layer0 = nn.AvgPool2d(1, stride=1)
         # else:
         #     self.layer0 = nn.MaxPool2d(2, stride=2)
-        if self.in_planes == 3:
-            self.layer1 = self._make_layer(init_channels, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer2 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer3 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer4 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer5 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=1)
-        else:
-            # fit MNIST data (28 x 28)
-            self.layer1 = self._make_layer(init_channels, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer2 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer3 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer4 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=3)
-            self.layer5 = self._make_layer(self.in_planes, block_size, conv_layer,
-                                        activation, stride=2, kernel_size=1)
+        self.layer1 = self._make_layer(init_channels, block_size, conv_layer,
+                                    activation, stride=2, kernel_size=3)
+        self.layer2 = self._make_layer(self.in_planes, block_size, conv_layer,
+                                    activation, stride=2, kernel_size=3)
+        self.layer3 = self._make_layer(self.in_planes, block_size, conv_layer,
+                                    activation, stride=2, kernel_size=3)
+        self.layer4 = self._make_layer(self.in_planes, block_size, conv_layer,
+                                    activation, stride=2, kernel_size=3)
+        self.layer5 = self._make_layer(self.in_planes, block_size, conv_layer,
+                                    activation, stride=2, kernel_size=1)
 
         flat_size = input_side // 32
         flat_features = flat_size * flat_size * self.in_planes

@@ -2,11 +2,16 @@ from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import logging
 import argparse
+import os
+import json
+from functools import partial
+import scipy
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -16,8 +21,15 @@ cifar100_std = (0.2675, 0.2565, 0.2761)
 mnist_mean = (0.1307)
 mnist_std = (0.3081)
 
+mnist_pad_mean = (0.10003699)
+mnist_pad_std = (0.27521738)
+
+mnist_invert_mean = (1 - 0.1307)
+mnist_invert_std = (0.3081)
+
 cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
 cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
+
 cifar100_maxpool_mean = (0.5631373, 0.54179263, 0.4953446)
 cifar100_maxpool_std = (0.26223433, 0.25095224, 0.27351803)
 
@@ -29,8 +41,13 @@ lower_limit = ((0 - mu)/ std)
 
 formatter = logging.Formatter('%(message)s')
 
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350] 
+epoch_eval_list = [5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350]
+# epoch_eval_list = [10, 50, 100, 150]
+# epoch_eval_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+# epoch_eval_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 # epoch_store_list = [3]
-epoch_store_list = [0, 5, 10, 25, 50, 75, 100, 150] 
+# epoch_store_list = [0, 5, 10, 25, 50, 75, 100, 150] 
 # epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
 # epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
@@ -56,14 +73,13 @@ def get_args():
     parser.add_argument('--dim', nargs='*', default=None, type=int)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
-    # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
-    # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
+    parser.add_argument('--noise', action='store_true')
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--lr-min', default=0., type=float)
-    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
@@ -83,8 +99,9 @@ def get_args():
 
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist'],
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist', 'cifar5m'],
                         help='dataset to use for training')
+    parser.add_argument('--cifar5m-label', default=None, type=int, choices=[i for i in range(10)])
 
     # Other specifications
     parser.add_argument('--epsilon', default=36, type=int)
@@ -102,13 +119,22 @@ def process_args(args):
             args.syn_func = np.random.multivariate_normal 
         else:
             raise ValueError('Unknown synthetic dataset')
+        
+    # if args.debug:
+    #     args.out_dir = 'debug'
     
     args.out_dir += '_' + str(args.dataset)
-    args.run_name = str(args.dataset) + ' block=' + str(args.block_size) + ' dim=' + str(args.dim)
-
+    args.run_name = str(args.dataset)
+    if args.cifar5m_label is not None:
+        args.out_dir += '_' + str(args.cifar5m_label)
+        args.run_name += ' label=' + str(args.cifar5m_label)
+   
     args.out_dir += '_batch_size=' + str(args.batch_size)
     args.out_dir += '_' + str(args.block_size)
-    args.out_dir += '_' + str(args.dim)
+    args.run_name += ' block=' + str(args.block_size)
+    if args.dim:
+        args.out_dir += '_' + str(args.dim)
+        args.run_name += ' dim=' + str(args.dim)
     args.out_dir += '_' + str(args.lr_max)
     args.out_dir += '_train_size=' + str(args.train_size)
 
@@ -119,6 +145,41 @@ def process_args(args):
     args.num_classes = 1
 
     return args
+
+class LRWarmUp():
+    def __init__(self, opt, warmup_steps, lr_max, lr_min, milestones, gamma):
+        self._opt = opt
+        self._lr_max = lr_max
+        self._lr_min = lr_min
+        self._warmup_steps = warmup_steps
+        self._step = 0
+        self._milestones = milestones
+        self._gamma = gamma
+        self._last_lr = lr_max / warmup_steps
+        self._last_loss = 0
+
+        assert warmup_steps < milestones[0]
+
+    def step(self, loss):
+        self._step += 1
+        if self._step < self._warmup_steps:
+            self._last_lr = self._lr_max / self._warmup_steps * (self._step + 1)
+        if (self._step + 1) in self._milestones:
+            self._last_lr *= self._gamma
+        
+        if loss < min(5 * self._last_loss, -5):
+            self._last_lr *= self._gamma 
+        
+        if self._last_lr < self._lr_min:
+            self._last_lr = self._lr_min
+        
+        self._last_loss = loss
+
+        for param_group in self._opt.param_groups:
+            param_group['lr'] = self._last_lr
+
+    def get_last_lr(self):
+        return self._last_lr
 
 def isoLossEval(output1, output2, type='l1'):
     power = 2 if type == 'l2' else 1
@@ -134,6 +195,17 @@ class isoLoss(nn.Module):
 
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
+
+# return [size + dim] tensor synthetic data (independent at each entry) generated by generate()
+def synthetic(dim, size, mean=0, var=1, generate=np.random.multivariate_normal):
+    total_dim = np.prod(dim)
+    syn = np.random.multivariate_normal(
+        mean = mean * np.ones(total_dim),
+        cov = var * np.identity(total_dim),
+        size = size
+    )
+    return torch.reshape(torch.tensor(syn).float(), [size] + dim)
+
 
 def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32],train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
@@ -178,7 +250,46 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     )
     return train_loader_1, train_loader_2, test_loader
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None):
+class CIFAR5M(Dataset):
+    def __init__(self, dir_, label, transform, train=True, download=False):
+        super(Dataset, self).__init__()
+        assert 0 <= label <= 9
+        self.label = label
+        self.dir_ = dir_
+        self.transform = transform
+        self.train = train
+        dataset = cifar_5m(dir_, label=self.label)
+        self.data = dataset['X'] if self.train else []
+        self.targets = dataset['Y'] if self.train else []
+        
+    def __len__(self):
+        return len(self.data)
+        
+    def __getitem__(self, index):
+        assert 0 <= index <= self.__len__()
+        img = self.data[index]
+        if self.transform:
+            img = self.transform(img)
+        return img, self.targets[index]
+
+def cifar_5m(dir_, label=0):
+    merged_data = {'X': [], 'Y': []}
+    for i in range(1):
+        file = os.path.join(dir_, 'cifar5m_part' + str(i) + '.npz')
+        data_part = np.load(file)
+        for (x, y) in zip(data_part['X'], data_part['Y']):
+            if y == label:
+                merged_data['X'].append(x)
+                merged_data['Y'].append(y)
+
+    merged_data['X'] = np.array(merged_data['X']) 
+    merged_data['Y'] = np.array(merged_data['Y']) 
+    return merged_data
+
+def cifar5m_init(dir_, label, transform, train, download):
+    return CIFAR5M(dir_, label, transform, train)
+
+def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=None, label=None, add_noise=False):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean if dim is None else cifar10_maxpool_mean
@@ -189,39 +300,42 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         std = cifar100_std if dim is None else cifar100_maxpool_std
     elif dataset_name == 'mnist':
         dataset_func = datasets.MNIST
-        mean = mnist_mean
-        std = mnist_std
+        mean = mnist_pad_mean
+        std = mnist_pad_std
+    elif dataset_name == 'cifar5m':
+        assert label is not None
+        f = open('cifar5m.json')
+        data = json.load(f)
+        mean = data['cifar-5m'][label]['mean']
+        std = data['cifar-5m'][label]['std']
+        dataset_func = partial(cifar5m_init, label=label)
 
 
-    if normalize:
-        train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
-        ])
-    else:
-        train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-        ])
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
+    train_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+    test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+    if dataset_name == 'mnist':
+        train_transform = transforms.Compose([transforms.Pad(2), train_transform])
+        test_transform = transforms.Compose([transforms.Pad(2), test_transform])
         
     num_workers = 4
     train_dataset = dataset_func(
         dir_, train=True, transform=train_transform, download=True)
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
+    
+    if dataset == 'mnist' and add_noise:
+        train_noise = synthetic([28, 28], size=len(train_dataset.data), mean=0, var=1/1000000)
+        test_noise = synthetic([28, 28], size=len(test_dataset.data), mean=0, var=1/1000000)
+        train_dataset.data = train_dataset.data.float() + train_noise
+        test_dataset.data = test_dataset.data.float() + test_noise
 
     total_len = len(train_dataset.data) + len(test_dataset.data)
-
     total_data = np.concatenate((train_dataset.data, test_dataset.data))
     total_targets = np.random.choice([-1, 1], size=total_len)
 
@@ -273,6 +387,31 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
             losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
 
     return losses_array
+
+def moment_evaluate(synthetic, data_loader, model, size, num_sample):
+    model.eval()
+    moments_dic = {}
+    moments_p = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    for p in moments_p:
+        moments_dic[p] = []
+
+    for _ in range(num_sample):
+        sample = np.random.choice(len(data_loader.dataset), size=size, replace=False)
+
+        with torch.no_grad():
+            for _, X in enumerate(data_loader):
+                if synthetic == False:
+                    X = X[0]
+                X = X.cuda().float()
+                output = model(X[sample]).cpu()
+                moments = []
+                for p in moments_p:
+                    moments.append(scipy.stats.moment(output, moment=p)[0] ** (1 / p))
+
+            for idx, p in enumerate(moments_p):
+                moments_dic[p].append(moments[idx])
+
+    return moments_dic
 
 
 from cayley_ortho_conv import Cayley, CayleyLinear

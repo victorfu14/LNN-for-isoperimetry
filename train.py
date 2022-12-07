@@ -35,15 +35,17 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
+    args.run_name += ' adam'
+    if args.noise:
+        args.run_name += ' noisy'
+
     if not args.debug:
         wandb.init(
             project='Isoperimetry', 
             job_type='train',
             name=args.run_name,
-            config = vars(args)
+            config=vars(args)
         )
-    
-    # args.dim = [3, 32, 32]
 
     # train_loader, test_loader = get_synthetic_loaders(
     #     batch_size=args.batch_size,
@@ -56,7 +58,9 @@ def main():
         args.data_dir, 
         args.batch_size, 
         args.dataset, 
-        train_size = args.train_size, 
+        train_size=args.train_size, 
+        label=args.cifar5m_label,
+        add_noise=args.noise
     )
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -66,7 +70,7 @@ def main():
         src = os.path.join('./', f)
         dst = os.path.join(code_dir, f)
         if os.path.isfile(src):
-            if f[-3:] == '.py' or f[-3:] == '.sh':
+            if f[-3:] == '.py' or f[-3:] == '.sh' or f[-3:] == '.json':
                 copyfile(src, dst)
 
     train_logfile = os.path.join(args.out_dir, 'train.log')
@@ -81,10 +85,14 @@ def main():
 
     conv_params, activation_params, other_params = parameter_lists(model)
     if args.conv_layer == 'soc':
-        opt = torch.optim.SGD([
+        # opt = torch.optim.SGD([
+        #     {'params': activation_params, 'weight_decay': 0.},
+        #     {'params': (conv_params + other_params), 'weight_decay': args.weight_decay}
+        # ], lr=args.lr_max, momentum=args.momentum)
+        opt = torch.optim.Adam([
             {'params': activation_params, 'weight_decay': 0.},
             {'params': (conv_params + other_params), 'weight_decay': args.weight_decay}
-        ], lr=args.lr_max, momentum=args.momentum)
+        ], lr=args.lr_max)
     else:
         opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum,
                               weight_decay=0.)
@@ -97,9 +105,15 @@ def main():
     criterion = nn.MSELoss()
 
     lr_steps = args.epochs
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(
+    #     opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
+
+    # reduce on plateau scheduler
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
+
+    # multistep with lr warm up
+    scheduler = LRWarmUp(opt, warmup_steps=20, lr_max=args.lr_max, lr_min=args.lr_min,
+        milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
@@ -123,8 +137,11 @@ def main():
 
             X, y = X.cuda(), y.cuda().float()
 
+            # output1, output2 = model(X_1), model(X_2)
+            # print(output1.size())
+            # ce_loss = criterion(output1, output2)
+            
             output = model(X)
-
             ce_loss = criterion(output[:, 0], y)
             loss = ce_loss
 
@@ -139,13 +156,13 @@ def main():
         epoch_time = time.time()
         train_loss /= train_n
 
-        # # reduce on plateau scheduler
+        # reduce on plateau scheduler
         # scheduler.step(train_loss)
         # lr = scheduler._last_lr[0]
 
-        # multistep scheduler
-        scheduler.step()
-        lr = scheduler.get_last_lr()[0]
+        scheduler.step(train_loss)
+        lr = scheduler.get_last_lr()
+        # lr = scheduler.get_last_lr()[0]
 
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss)
