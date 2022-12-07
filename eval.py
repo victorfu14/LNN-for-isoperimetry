@@ -113,6 +113,8 @@ def main():
     torch.cuda.manual_seed(args.seed)
 
     args.run_name += ' adam moment eval'
+    if args.noise:
+        args.run_name += ' noisy'
 
     if not args.debug:
         wandb.init(
@@ -127,7 +129,8 @@ def main():
         args.batch_size, 
         args.dataset, 
         train_size=args.train_size, 
-        label=args.cifar5m_label
+        label=args.cifar5m_label,
+        add_noise=args.noise
     ) if args.synthetic == False else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,

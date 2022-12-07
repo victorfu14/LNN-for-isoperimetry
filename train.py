@@ -35,6 +35,8 @@ def main():
     torch.cuda.manual_seed(args.seed)
 
     args.run_name += ' adam'
+    if args.noise:
+        args.run_name += ' noisy'
 
     if not args.debug:
         wandb.init(
@@ -54,7 +56,8 @@ def main():
         args.batch_size, 
         args.dataset, 
         train_size=args.train_size, 
-        label=args.cifar5m_label
+        label=args.cifar5m_label,
+        add_noise=args.noise
     )
 
     os.makedirs(args.out_dir, exist_ok=True)
