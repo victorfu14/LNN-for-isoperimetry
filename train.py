@@ -34,6 +34,7 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
+    args.run_name += ' adam'
     if args.noise:
         args.run_name += ' noisy'
 
@@ -81,10 +82,14 @@ def main():
 
     conv_params, activation_params, other_params = parameter_lists(model)
     if args.conv_layer == 'soc':
-        opt = torch.optim.SGD([
+        # opt = torch.optim.SGD([
+        #     {'params': activation_params, 'weight_decay': 0.},
+        #     {'params': (conv_params + other_params), 'weight_decay': args.weight_decay}
+        # ], lr=args.lr_max, momentum=args.momentum)
+        opt = torch.optim.Adam([
             {'params': activation_params, 'weight_decay': 0.},
             {'params': (conv_params + other_params), 'weight_decay': args.weight_decay}
-        ], lr=args.lr_max, momentum=args.momentum)
+        ], lr=args.lr_max)
     else:
         opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum,
                               weight_decay=0.)
@@ -97,11 +102,15 @@ def main():
     criterion = isoLoss()
 
     lr_steps = args.epochs
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
-    
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(
+    #     opt, milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
+
     # reduce on plateau scheduler
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=20, min_lr=args.lr_min, factor=0.6)
+
+    # multistep with lr warm up
+    scheduler = LRWarmUp(opt, warmup_steps=20, lr_max=args.lr_max, lr_min=args.lr_min,
+        milestones=[lr_steps // 2, (3 * lr_steps) // 4, (7 * lr_steps) // 8], gamma=0.15)
 
     last_model_path = os.path.join(args.out_dir, 'last.pth')
     last_opt_path = os.path.join(args.out_dir, 'last_opt.pth')
@@ -147,9 +156,9 @@ def main():
         # scheduler.step(train_loss)
         # lr = scheduler._last_lr[0]
 
-        # multistep scheduler
-        scheduler.step()
-        lr = scheduler.get_last_lr()[0]
+        scheduler.step(train_loss)
+        lr = scheduler.get_last_lr()
+        # lr = scheduler.get_last_lr()[0]
 
         train_logger.info('%d \t %.1f \t %.4f \t %.4f',
                     epoch, epoch_time - start_epoch_time, lr, train_loss)

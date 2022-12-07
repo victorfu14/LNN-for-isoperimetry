@@ -11,6 +11,7 @@ import argparse
 import os
 import json
 from functools import partial
+import scipy
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -40,8 +41,9 @@ lower_limit = ((0 - mu)/ std)
 
 formatter = logging.Formatter('%(message)s')
 
-epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150] 
-epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150]
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350] 
+epoch_eval_list = [5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350]
+# epoch_eval_list = [10, 50, 100, 150]
 # epoch_eval_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
 # epoch_eval_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
 
@@ -113,8 +115,8 @@ def process_args(args):
         else:
             raise ValueError('Unknown synthetic dataset')
         
-    if args.debug:
-        args.out_dir = 'debug'
+    # if args.debug:
+    #     args.out_dir = 'debug'
     
     args.out_dir += '_' + str(args.dataset)
     args.run_name = str(args.dataset)
@@ -138,6 +140,41 @@ def process_args(args):
     args.num_classes = 1
 
     return args
+
+class LRWarmUp():
+    def __init__(self, opt, warmup_steps, lr_max, lr_min, milestones, gamma):
+        self._opt = opt
+        self._lr_max = lr_max
+        self._lr_min = lr_min
+        self._warmup_steps = warmup_steps
+        self._step = 0
+        self._milestones = milestones
+        self._gamma = gamma
+        self._last_lr = lr_max / warmup_steps
+        self._last_loss = 0
+
+        assert warmup_steps < milestones[0]
+
+    def step(self, loss):
+        self._step += 1
+        if self._step < self._warmup_steps:
+            self._last_lr = self._lr_max / self._warmup_steps * (self._step + 1)
+        if (self._step + 1) in self._milestones:
+            self._last_lr *= self._gamma
+        
+        if loss < min(5 * self._last_loss, -5):
+            self._last_lr *= self._gamma 
+        
+        if self._last_lr < self._lr_min:
+            self._last_lr = self._lr_min
+        
+        self._last_loss = loss
+
+        for param_group in self._opt.param_groups:
+            param_group['lr'] = self._last_lr
+
+    def get_last_lr(self):
+        return self._last_lr
 
 def isoLossEval(output1, output2, type='l1'):
     power = 2 if type == 'l2' else 1
@@ -343,6 +380,31 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
             losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
 
     return losses_array
+
+def moment_evaluate(synthetic, data_loader, model, size, num_sample):
+    model.eval()
+    moments_dic = {}
+    moments_p = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    for p in moments_p:
+        moments_dic[p] = []
+
+    for _ in range(num_sample):
+        sample = np.random.choice(len(data_loader.dataset), size=size, replace=False)
+
+        with torch.no_grad():
+            for _, X in enumerate(data_loader):
+                if synthetic == False:
+                    X = X[0]
+                X = X.cuda().float()
+                output = model(X[sample]).cpu()
+                moments = []
+                for p in moments_p:
+                    moments.append(scipy.stats.moment(output, moment=p)[0] ** (1 / p))
+
+            for idx, p in enumerate(moments_p):
+                moments_dic[p].append(moments[idx])
+
+    return moments_dic
 
 
 from cayley_ortho_conv import Cayley, CayleyLinear
