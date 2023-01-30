@@ -22,6 +22,19 @@ This repo utilize SOC structure (<https://github.com/singlasahil14/SOC>) to veri
 - [x] Use median
 - [ ] Use linear programming to check
 
+> The project can be found at [here](https://wandb.ai/pbb/iso).
+
+## TODO
+
+- [x] 🎨 Draw a line plot
+- [x] 🧪 Implement Validation set partition
+- [x] 🧪 Use Square Root loss
+- [ ] 🧪 Use Gaussian data as a sanity check.
+- [ ] Random $f$
+- [ ] Different Epoch's $f$
+- [x] Use median
+- [ ] Use linear programming to check
+
 ## Prerequisites
 
 - Python 3.7 or 3.8

@@ -35,7 +35,8 @@ def main():
         wandb.init(
             project='Isoperimetry',
             job_type='train',
-            name='({}x) ID={}{}'.format(args.duplicated, args.intrinsic_dim, ' P' if args.rand_perm else ''),
+            name='({}x) ID={}{}{}'.format(args.duplicated, args.intrinsic_dim,
+                                          ' P' if args.rand_perm else '', ' NN1e-2' if args.rand_noisy > 0 else ''),
             config=vars(args)
         )
 
@@ -45,6 +46,7 @@ def main():
         dim=args.dim,
         intrinsic_dim=args.intrinsic_dim,
         rand_perm=args.rand_perm,
+        rand_noisy=args.rand_noisy,
         train_size=args.train_size,
     ) if args.dataset == 'gaussian' else get_loaders(
         args.data_dir,
@@ -66,7 +68,6 @@ def main():
     train_logfile = os.path.join(args.out_dir, 'train.log')
     if os.path.exists(train_logfile):
         os.remove(train_logfile)
-
     train_logger = setup_logger('train_logger', train_logfile)
     train_logger.info(args)
 
@@ -147,8 +148,9 @@ def main():
                           epoch, epoch_time - start_epoch_time, lr, train_loss)
 
         if not args.debug:
-            wandb.log({"loss": train_loss, "lr": lr})
-            wandb.watch(model)
+            wandb.log({"loss": train_loss})
+            if epoch % 50 == 0:
+                wandb.watch(model)
 
         torch.save(model.state_dict(), last_model_path)
         trainer_state_dict = {'epoch': epoch, 'optimizer_state_dict': opt.state_dict()}

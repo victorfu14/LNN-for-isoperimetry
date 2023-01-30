@@ -66,6 +66,125 @@ def get_args():
     parser.add_argument('--dim', nargs='*', default=None, type=int)
     parser.add_argument('--duplicated', default=1, type=int)
     parser.add_argument('--rand-perm', action='store_true')
+    parser.add_argument('--rand-noisy', default=0, type=float)
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--rand-label', action='store_true')
+    parser.add_argument('--sanity', action='store_true')
+    # parser.add_argument('--loss', default='l1', type=str, choices=['l1', 'l2'])
+    # parser.add_argument('--syn-data', default=None, type=str, choices=[None, 'gaussian'])
+
+    # Training specifications
+    parser.add_argument('--batch-size', default=128, type=int)
+    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--lr-min', default=0., type=float)
+    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--weight-decay', default=5e-4, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O2'],
+                        help='O0 is FP32 training and O2 is "Almost FP16" Mixed Precision')
+    parser.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
+                        help='If loss_scale is "dynamic", adaptively adjust the loss scale over time')
+
+    # Model architecture specifications
+    parser.add_argument('--conv-layer', default='soc', type=str, choices=['bcop', 'cayley', 'soc'],
+                        help='BCOP, Cayley, SOC convolution')
+    parser.add_argument('--init-channels', default=32, type=int)
+    parser.add_argument('--activation', default='maxmin', choices=['maxmin', 'hh1', 'hh2'],
+                        help='Activation function')
+    parser.add_argument('--block-size', default=2, type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8],
+                        help='size of each block')
+    parser.add_argument('--lln', action='store_true', help='set last linear to be linear and normalized')
+
+    # Dataset specifications
+    parser.add_argument('--data-dir', default='./cifar-data', type=str)
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist'],
+                        help='dataset to use for training')
+
+    # Other specifications
+    parser.add_argument('--epsilon', default=36, type=int)
+    parser.add_argument('--out-dir', default='LNNIso', type=str, help='Output directory')
+    parser.add_argument('--workers', default=4, type=int, help='Number of workers used in data-loading')
+    parser.add_argument('--seed', default=0, type=int, help='Random seed')
+    return parser.parse_args()
+
+
+def process_args(args):
+    if args.conv_layer == 'cayley' and args.opt_level == 'O2':
+        raise ValueError('O2 optimization level is incompatible with Cayley Convolution')
+
+    if args.dataset == 'gaussian':
+        args.syn_func = np.random.multivariate_normal
+
+    args.out_dir = os.path.join("/scratch", "vvh_root", "vvh1", "pbb", "Project", "ISO", args.out_dir)
+    args.out_dir += '_' + str(args.dataset)
+    args.run_name = str(args.dataset) + ' b=' + str(args.block_size) + ' D=' + \
+        str(args.dim) + ' ID=' + str(args.duplicated) + 'x'
+
+    args.out_dir += '_' + str(args.block_size)
+    args.out_dir += '_' + str(args.dim)
+    args.out_dir += '_' + str(args.duplicated) + 'x'
+    if args.rand_perm:
+        args.out_dir += '_' + 'rand_perm'
+    if args.rand_noisy > 0:
+        args.out_dir += '_' + 'rand_noisy'
+    args.out_dir += '_' + str(args.lr_max)
+    args.out_dir += '_train_size=' + str(args.train_size)
+
+    if args.lln:
+        args.out_dir += '_lln'
+
+    # Only need R^d -> R lipschitz functions
+    args.num_classes = 1
+    args.intrinsic_dim = np.prod(args.dim) // args.duplicated
+
+    return args
+
+
+def isoLossEval(output1, output2, type='l1'):
+    power = 2 if type == 'l2' else 1
+    return -torch.mean(output1 - output2) ** power
+
+
+class isoLoss(nn.Module):
+    def __init__(self, loss='l1'):
+        super(isoLoss, self).__init__()
+        self.loss = loss
+
+    def forward(self, output1, output2):
+        return isoLossEval(output1, output2, type=self.loss)
+
+
+formatter = logging.Formatter('%(message)s')
+
+# epoch_store_list = [3]
+epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 35, 45, 50, 75, 100, 150, 200, 250, 300, 350]
+epoch_eval_list = [0, 5, 10, 25, 50, 75, 100, 150, 200]
+# epoch_store_list = [0, 1, 2, 3, 4, 5, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 4, 7, 10, 15, 25, 35] # cifar10
+# epoch_store_list = [0, 1, 2, 3, 5, 7, 10, 15, 25, 50, 75] # cifar100
+
+
+def setup_logger(name, log_file, level=logging.INFO):
+    """To setup as many loggers as you want"""
+
+    handler = logging.FileHandler(log_file)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+
+    # isoperimetry arguments
+    parser.add_argument('--train-size', default=10000, type=int)
+    parser.add_argument('--dim', nargs='*', default=None, type=int)
+    parser.add_argument('--duplicated', default=1, type=int)
+    parser.add_argument('--rand-perm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
     parser.add_argument('--sanity', action='store_true')
@@ -155,9 +274,10 @@ def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
 
-def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072, rand_perm=False,  train_size=10000, test_size=40000):
+def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072, rand_perm=False, rand_noisy=0, train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
     perm = np.random.RandomState(seed=38).permutation
+    noisy_var = rand_noisy
     z_1 = generate(
         mean=np.zeros(intrinsic_dim),
         cov=np.identity(intrinsic_dim),
@@ -172,31 +292,63 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     if intrinsic_dim == 1536:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z), axis=None)
-            x_1[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_1[i] = x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z), axis=None)
-            x_2[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_2[i] = x
     elif intrinsic_dim == 1024:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z, z), axis=None)
-            x_1[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_1[i] = x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z, z), axis=None)
-            x_2[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_2[i] = x
     elif intrinsic_dim == 768:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z, z, z), axis=None)
-            x_1[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_1[i] = x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z, z, z), axis=None)
-            x_2[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_2[i] = x
     elif intrinsic_dim == 512:
         for i, z in enumerate(z_1):
             x = np.concatenate((z, z, z, z, z, z), axis=None)
-            x_1[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_1[i] = x
         for i, z in enumerate(z_2):
             x = np.concatenate((z, z, z, z, z, z), axis=None)
-            x_2[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            x_2[i] = x
     else:
         x_1, x_2 = z_1, z_2
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
@@ -226,19 +378,35 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     if intrinsic_dim == 1536:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t), axis=None)
-            test[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            test[i] = x
     elif intrinsic_dim == 1024:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t, t), axis=None)
-            test[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            test[i] = x
     elif intrinsic_dim == 768:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t, t, t), axis=None)
-            test[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            test[i] = x
     elif intrinsic_dim == 512:
         for i, t in enumerate(t_1):
             x = np.concatenate((t, t, t, t, t, t), axis=None)
-            test[i] = perm(x) if rand_perm else x
+            if noisy_var > 0:
+                x = x + np.random.normal(loc=0, scale=noisy_var, size=total_dim)
+            if rand_perm:
+                x = perm(x)
+            test[i] = x
     else:
         test = t_1
 

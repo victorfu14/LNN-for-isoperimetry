@@ -58,7 +58,6 @@ def evaluate_model(args, test_loader):
     eval_logfile = os.path.join(args.out_dir, 'eval.log')
     if os.path.exists(eval_logfile):
         os.remove(eval_logfile)
-
     eval_logger = setup_logger('eval_logger', eval_logfile)
     eval_logger.info(args)
 
@@ -112,7 +111,8 @@ def main():
     wandb.init(
         project='Isoperimetry',
         job_type='eval',
-        name='({}x) ID={}{}'.format(args.duplicated, args.intrinsic_dim, ' P' if args.rand_perm else ''),
+        name='({}x) ID={}{}{}'.format(args.duplicated, args.intrinsic_dim,
+                                      ' P' if args.rand_perm else '', ' NN1e-2' if args.rand_noisy > 0 else ''),
         config=vars(args)
     )
 
@@ -127,6 +127,7 @@ def main():
         dim=args.dim,
         intrinsic_dim=args.intrinsic_dim,
         rand_perm=args.rand_perm,
+        rand_noisy=args.rand_noisy,
         train_size=args.train_size,
     )
 
