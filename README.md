@@ -1,46 +1,53 @@
+# LNN for Isoperimetry
+
+This repo utilize SOC structure (<https://github.com/singlasahil14/SOC>) to verify whether real world datasets satisfy isoperimety properties proposed by (<https://arxiv.org/abs/2105.12806>).
+
 # Skew Orthogonal Convolutions
 
-+ **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions. 
-+ **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
-+ **Certificate Regularization (CR)** leads to significantly improved robustness certificates.
-+ **Householder Activations (HH)** improve the performance for deeper networks.
+- **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions.
+- **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
+- **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
+- **Householder Activations (HH)** improve the performance of deeper networks.
+
+> The project can be found at [here](https://wandb.ai/pbb/iso).
+
+## TODO
+
+- [x] 🎨 Draw a line plot
+- [x] 🧪 Implement Validation set partition
+- [x] 🧪 Use Square Root loss
+- [ ] 🧪 Use Gaussian data as a sanity check.
+- [ ] Random $f$
+- [ ] Different Epoch's $f$
+- [x] Use median
+- [ ] Use linear programming to check
 
 ## Prerequisites
 
-+ Python 3.7 or 3.8
-+ Pytorch 1.8 
-+ einops. Can be installed using ```pip install einops```
-+ NVIDIA Apex. Can be installed using ```conda install -c conda-forge nvidia-apex```
-+ A recent NVIDIA GPU
+- Python 3.7 or 3.8
+- Pytorch 1.8
+- einops. Can be installed using ```pip install einops```
+- NVIDIA Apex. Can be installed using ```conda install -c conda-forge nvidia-apex```
+- A recent NVIDIA GPU
 
 ## How to train 1-Lipschitz Convnets?
 
-```python train_robust.py --conv-layer CONV --activation ACT --num-blocks BLOCKS --dataset DATASET --gamma GAMMA```
-+ CONV: bcop, cayley, soc
-+ ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
-+ BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
-+ GAMMA: certificate regularization coefficient
-+ Use ```--lln``` to enable last layer normalization
-+ DATASET: cifar10/cifar100.
+Real world datasets:
+```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --dataset DATASET```
 
-## How to train Standard Convnets using Orthogonal Convolutions?
-```python train_standard.py --conv-layer CONV --model-name MODEL --dataset DATASET```
-+ CONV: bcop, cayley, soc (Use ```standard``` to train using standard convolution)
-+ MODEL: resnet18, resnet34, resnet50, resnet101, resnet152
-+ DATASET: cifar10, cifar100
+Synthetic distributional datasets, such as Gaussian distribution:
+```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetc SYN --syn-data SYN_DATA```
 
-## Demonstration of Skew Orthogonal Convolutions
-
-![demo](./figures/SOC_demo.png)
-
-## Demonstration of Householder Activations
-+ Illustration of the hh1 activation function
-![demo](./figures/hh1_demo.png)
-+ Illustration of the hh2 activation function (right)
-![demo](./figures/hh2_demo.png)
-
+- CONV: bcop, cayley, soc
+- ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
+- BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
+- Use ```--lln``` to enable last layer normalization
+- DATASET: cifar10/cifar100.
+- SYN: ```True/False```
+- SYN_DATA: gaussian
 
 ## Citations
+
 If you find this repository useful for your research, please cite:
 
 ```
@@ -62,3 +69,9 @@ If you find this repository useful for your research, please cite:
   url={https://openreview.net/forum?id=tD7eCtaSkR}
 }
 ```
+
+## Note
+
+1. Given $X, X^\prime$, the loss is defined as $L(X, X^\prime)\coloneqq - \frac{1}{N} \sum_{i=1}^{N} (f(x_i) - f(x^\prime_i))$
+2. When reporting the loss when testing samples $X^{\prime \prime}, X^{\prime\prime\prime}$, we don't care about the sign, hence we report $\left\vert L(X^{\prime\prime}, X^{\prime\prime\prime}) \right\vert$.
+3. Change the number of classes to $1$ since we only want to consider $\mathcal{F}$ such that $f\colon R^d \to \mathbb{R}$.

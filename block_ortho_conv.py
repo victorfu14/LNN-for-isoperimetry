@@ -6,6 +6,7 @@ import math
 import time
 from einops import rearrange
 
+
 def power_iteration(A, init_u=None, n_iters=20, return_uv=True):
     shape = list(A.shape)
     shape[-1] = 1
@@ -24,6 +25,7 @@ def power_iteration(A, init_u=None, n_iters=20, return_uv=True):
     if return_uv:
         return u, s, v
     return s
+
 
 def bjorck_orthonormalize(
         w, beta=0.5, iters=20, order=1, power_iteration_scaling=False,
@@ -48,10 +50,12 @@ def bjorck_orthonormalize(
         w = (1 + beta) * w - beta * w @ w_t_w
     return w
 
+
 def orthogonal_matrix(n):
     a = torch.randn((n, n))
     q, r = torch.qr(a)
     return q * torch.sign(torch.diag(r))
+
 
 def symmetric_projection(n, ortho_matrix, mask=None):
     q = ortho_matrix
@@ -60,6 +64,7 @@ def symmetric_projection(n, ortho_matrix, mask=None):
         mask = (torch.randn(n) > 0).float()
     c = q * mask
     return c.mm(c.t())
+
 
 def block_orth(p1, p2):
     assert p1.shape == p2.shape
@@ -71,6 +76,7 @@ def block_orth(p1, p2):
     kernel2x2[1, 0] = (eye - p1).mm(p2)
     kernel2x2[1, 1] = (eye - p1).mm(eye - p2)
     return kernel2x2
+
 
 def matrix_conv(m1, m2):
     n = (m1[0, 0]).size(0)
@@ -96,8 +102,10 @@ def matrix_conv(m1, m2):
                         )
     return result
 
+
 def dict_to_tensor(x, k1, k2):
     return torch.stack([torch.stack([x[i, j] for j in range(k2)]) for i in range(k1)])
+
 
 def convolution_orthogonal_generator_projs(ksize, cin, cout, ortho, sym_projs):
     flipped = False
@@ -116,6 +124,7 @@ def convolution_orthogonal_generator_projs(ksize, cin, cout, ortho, sym_projs):
     if flipped:
         return dict_to_tensor(p, ksize, ksize).permute(2, 3, 1, 0)
     return dict_to_tensor(p, ksize, ksize).permute(3, 2, 1, 0)
+
 
 def convolution_orthogonal_generator(ksize, cin, cout, P, Q):
     flipped = False
@@ -139,6 +148,7 @@ def convolution_orthogonal_generator(ksize, cin, cout, P, Q):
         return dict_to_tensor(p, ksize, ksize).permute(2, 3, 1, 0)
     return dict_to_tensor(p, ksize, ksize).permute(3, 2, 1, 0)
 
+
 def convolution_orthogonal_initializer(ksize, cin, cout):
     P, Q = [], []
     cmax = max(cin, cout)
@@ -148,17 +158,18 @@ def convolution_orthogonal_initializer(ksize, cin, cout):
     P, Q = map(torch.stack, (P, Q))
     return convolution_orthogonal_generator(ksize, cin, cout, P, Q)
 
+
 class BCOP(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=None, 
-                 bias=True, bjorck_beta=0.5, bjorck_iters=20, bjorck_order=1, 
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=None,
+                 bias=True, bjorck_beta=0.5, bjorck_iters=20, bjorck_order=1,
                  power_iteration_scaling=True):
         super(BCOP, self).__init__()
-        assert (stride==1) or (stride==2)
+        assert (stride == 1) or (stride == 2)
         self.in_channels = in_channels*stride*stride
         self.out_channels = out_channels
-        
+
         self.max_channels = max(self.out_channels, self.in_channels)
-        
+
         self.stride = stride
         self.kernel_size = kernel_size
         self.num_kernels = 2*self.kernel_size - 1
@@ -166,14 +177,14 @@ class BCOP(nn.Module):
         self.bjorck_iters = bjorck_iters
         self.bjorck_beta = bjorck_beta
         self.bjorck_order = bjorck_order
-        
+
         self.buffer_weight = None
 
         self.power_iteration_scaling = power_iteration_scaling
-        
+
         # Define the unconstrained matrices Ms and Ns for Ps and Qs
         self.conv_matrices = nn.Parameter(
-            torch.Tensor(self.num_kernels, self.max_channels, 
+            torch.Tensor(self.num_kernels, self.max_channels,
                          self.max_channels),
             requires_grad=True,
         )
@@ -215,7 +226,7 @@ class BCOP(nn.Module):
 
     def forward(self, x):
         self._input_shape = x.shape[2:]
-        
+
         # orthogonalize all the matrices using Bjorck
         if self.training or self.buffer_weight is None:
             ortho = bjorck_orthonormalize(
@@ -243,14 +254,14 @@ class BCOP(nn.Module):
 
         # detach the weight when we are using the cached weights from previous steps
         bias = self.bias
-        
+
         # apply cyclic padding to the input and perform a standard convolution
         x_orig = x
         if self.stride > 1:
-            x = rearrange(x, "b c (w k1) (h k2) -> b (c k1 k2) w h", 
+            x = rearrange(x, "b c (w k1) (h k2) -> b (c k1 k2) w h",
                           k1=self.stride, k2=self.stride)
 
-        p4d = (self.kernel_size//2, self.kernel_size//2, 
+        p4d = (self.kernel_size//2, self.kernel_size//2,
                self.kernel_size//2, self.kernel_size//2)
         x_pad = F.pad(x, p4d, mode='circular')
 
