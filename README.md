@@ -1,4 +1,5 @@
 # LNN for Isoperimetry
+<<<<<<< HEAD
 
 This repo utilize SOC structure (<https://github.com/singlasahil14/SOC>) to verify whether real world datasets satisfy isoperimety properties proposed by (<https://arxiv.org/abs/2105.12806>).
 
@@ -21,6 +22,18 @@ This repo utilize SOC structure (<https://github.com/singlasahil14/SOC>) to veri
 - [ ] Different Epoch's $f$
 - [x] Use median
 - [ ] Use linear programming to check
+=======
+
+This repo utilize SOC structure (https://github.com/singlasahil14/SOC) to verify whether real world datasets satisfy isoperimety properties proposed by (https://arxiv.org/abs/2105.12806).
+
+
+# Skew Orthogonal Convolutions
+
+- **Skew Orthogonal Convolution (SOC)** is a convolution layer that has an orthogonal Jacobian and achieves state-of-the-art standard and provably robust accuracy compared to other orthogonal convolutions.
+- **Last Layer normalization (LLN)** leads to improved performance when the number of classes is large.
+- **Certificate Regularization (CR)** leads to significantly improved robustness of certificates.
+- **Householder Activations (HH)** improve the performance of deeper networks.
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 
 ## Prerequisites
 
@@ -36,14 +49,21 @@ Real world datasets:
 ```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --dataset DATASET```
 
 Synthetic distributional datasets, such as Gaussian distribution:
+<<<<<<< HEAD
 ```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetc SYN --syn-data SYN_DATA```
+=======
+```python train.py --conv-layer CONV --activation ACT --block-size BLOCKS --synthetic --syn-data SYN_DATA```
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 
 - CONV: bcop, cayley, soc
 - ACT: maxmin, hh1, hh2 (hh1, hh2 are householder activations of order 1, 2; both illustrated below).
 - BLOCKS: 1, 2, 3, 4, 5, 6, 7, 8
 - Use ```--lln``` to enable last layer normalization
 - DATASET: cifar10/cifar100.
+<<<<<<< HEAD
 - SYN: ```True/False```
+=======
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 - SYN_DATA: gaussian
 
 ## Citations

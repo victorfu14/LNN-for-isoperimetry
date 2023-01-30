@@ -22,15 +22,24 @@ from sklearn.linear_model import LinearRegression
 
 test_size_list = [50, 100, 250, 500, 1000, 2500, 5000, 8000, 10000]
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 def init_model(args):
     args.in_planes = 1 if args.dataset == 'mnist' else 3
     model = LipConvNet(args.conv_layer, args.activation, init_channels=args.init_channels,
                        block_size=args.block_size, num_classes=args.num_classes,
+<<<<<<< HEAD
                        lln=args.lln, in_planes=args.in_planes)
     return model
 
 
+=======
+                       lln=args.lln, syn=args.synthetic, in_planes=args.in_planes)
+    return model
+
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 def eval(args, epoch, model_path, test_loader):
     # Evaluate on different test sample sizes
     logger = logging.getLogger('eval_logger')
@@ -42,6 +51,7 @@ def eval(args, epoch, model_path, test_loader):
         model_test.load_state_dict(torch.load(model_path))
         model_test.float()
         model_test.eval() if epoch != 0 else model_test.train()
+<<<<<<< HEAD
 
         start_test_time = time.time()
         losses_arr = random_evaluate(args.dataset, test_loader, model_test, test_size, 20, sanity_check=args.sanity)
@@ -54,11 +64,27 @@ def eval(args, epoch, model_path, test_loader):
     return loss
 
 
+=======
+            
+        start_test_time = time.time()
+        losses_arr = random_evaluate(args.synthetic, test_loader, model_test, test_size, 20)
+        total_time = time.time() - start_test_time
+        test_loss = np.mean(np.abs(losses_arr))
+        loss[test_size] = [[val, epoch] for val in losses_arr]
+        
+        logger.info('%d \t %.4f \t %.4f', test_size, test_loss, total_time)
+    
+    return loss
+
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 def evaluate_model(args, test_loader):
     eval_logfile = os.path.join(args.out_dir, 'eval.log')
     if os.path.exists(eval_logfile):
         os.remove(eval_logfile)
+<<<<<<< HEAD
 
+=======
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
     eval_logger = setup_logger('eval_logger', eval_logfile)
     eval_logger.info(args)
 
@@ -66,7 +92,11 @@ def evaluate_model(args, test_loader):
     loss = {}
     mean_loss_aggregate = []
     loss_reg = []
+<<<<<<< HEAD
     epoch_list = epoch_eval_list if args.epochs in epoch_eval_list else epoch_eval_list + [args.epochs]
+=======
+    epoch_list = epoch_store_list if args.epochs in epoch_store_list else epoch_store_list + [args.epochs]
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
     for i in test_size_list:
         loss[i] = []
     for epoch in epoch_list:
@@ -100,7 +130,10 @@ def evaluate_model(args, test_loader):
     eval_logger.info('Total eval time: %.4f minutes', (end - start)/60)
     return
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 def main():
     args = get_args()
     args = process_args(args)
@@ -112,6 +145,7 @@ def main():
     wandb.init(
         project='Isoperimetry',
         job_type='eval',
+<<<<<<< HEAD
         name='({}x) ID={}{}{}'.format(args.duplicated, args.intrinsic_dim, ' P' if args.rand_perm else '', ' NN1e-2' if args.rand_noisy > 0 else ''),
         config=vars(args)
     )
@@ -133,5 +167,26 @@ def main():
 
     evaluate_model(args, test_loader)
 
+=======
+        name=args.run_name,
+        config = vars(args)
+    )
+    
+    _, _, test_loader = get_loaders(
+        args.data_dir, 
+        args.batch_size, 
+        args.dataset, 
+        train_size = args.train_size, 
+    ) if args.synthetic == False else get_synthetic_loaders(
+        batch_size=args.batch_size,
+        generate=args.syn_func,
+        dim=args.dim,
+        train_size=args.train_size,
+    )
+        
+    evaluate_model(args, test_loader)
+        
+    
+>>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 if __name__ == "__main__":
     main()
