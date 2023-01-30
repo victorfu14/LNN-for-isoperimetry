@@ -1,11 +1,8 @@
-<<<<<<< HEAD
 from turtle import shape
 from custom_activations import MaxMin, HouseHolder, HouseHolder_Order_2
 from skew_ortho_conv import SOC
 from block_ortho_conv import BCOP
 from cayley_ortho_conv import Cayley, CayleyLinear
-=======
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 from random import random
 import torch
 import torch.nn as nn
@@ -15,11 +12,8 @@ from torchvision import datasets, transforms
 import numpy as np
 import logging
 import argparse
-<<<<<<< HEAD
 import os
 import json
-=======
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2507, 0.2507, 0.2507)
@@ -31,10 +25,6 @@ mnist_std = (0.3081)
 
 cifar10_maxpool_mean = (0.54904723, 0.5385685, 0.5022309)
 cifar10_maxpool_std = (0.24201128, 0.23731293, 0.257864)
-<<<<<<< HEAD
-
-=======
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 cifar100_maxpool_mean = (0.5631373, 0.54179263, 0.4953446)
 cifar100_maxpool_std = (0.26223433, 0.25095224, 0.27351803)
 
@@ -271,7 +261,6 @@ class isoLoss(nn.Module):
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
-<<<<<<< HEAD
 
 def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32], intrinsic_dim=3072, rand_perm=False, rand_noisy=0, train_size=10000, test_size=40000):
     total_dim = np.prod(dim)
@@ -350,20 +339,6 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
             x_2[i] = x
     else:
         x_1, x_2 = z_1, z_2
-=======
-def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, dim=[3, 32, 32],train_size=10000, test_size=40000):
-    total_dim = np.prod(dim)
-    x_1 = generate(
-        mean=np.zeros(np.prod(total_dim)),
-        cov=np.identity(np.prod(total_dim)),
-        size=train_size
-    )
-    x_2 = generate(
-        mean=np.zeros(total_dim),
-        cov=np.identity(total_dim),
-        size=train_size
-    )
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
     train_set_1 = torch.reshape(torch.tensor(x_1).float(), [train_size] + dim)
     train_set_2 = torch.reshape(torch.tensor(x_2).float(), [train_size] + dim)
     train_loader_1 = torch.utils.data.DataLoader(
@@ -380,7 +355,6 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
         pin_memory=True,
         num_workers=2,
     )
-<<<<<<< HEAD
 
     t_1 = generate(
         mean=np.zeros(intrinsic_dim),
@@ -424,13 +398,6 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     else:
         test = t_1
 
-=======
-    test = generate(
-        mean=np.zeros(total_dim),
-        cov=np.identity(total_dim),
-        size=test_size
-    )
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
     test_set = torch.reshape(torch.tensor(test).float(), [test_size] + dim)
     test_loader = torch.utils.data.DataLoader(
         dataset=test_set,
@@ -441,7 +408,6 @@ def get_synthetic_loaders(batch_size, generate=np.random.multivariate_normal, di
     )
     return train_loader_1, train_loader_2, test_loader
 
-<<<<<<< HEAD
 
 class CIFAR5M(Dataset):
     def __init__(self, dir_, label, transform, train=True):
@@ -481,9 +447,6 @@ def cifar_5m(dir_, label=0, train=True):
 
 
 def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None, label=None):
-=======
-def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_size=10000, dim=None):
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean if dim is None else cifar10_maxpool_mean
@@ -496,7 +459,6 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         dataset_func = datasets.MNIST
         mean = mnist_mean
         std = mnist_std
-<<<<<<< HEAD
     elif dataset_name == 'cifar-5m':
         assert label is not None
         f = open('cifar-5m.json')
@@ -506,14 +468,6 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
 
     if normalize:
         train_transform = transforms.Compose([
-=======
-
-
-    if normalize:
-        train_transform = transforms.Compose([
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -523,11 +477,6 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
         ])
     else:
         train_transform = transforms.Compose([
-<<<<<<< HEAD
-=======
-            # transforms.RandomCrop(32, padding=4),
-            # transforms.RandomHorizontalFlip(),
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
             transforms.ToTensor(),
         ])
         test_transform = transforms.Compose([
@@ -547,16 +496,9 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
     total_len = len(train_dataset.data) + len(test_dataset.data)
 
     total_set = torch.utils.data.ConcatDataset([train_dataset, test_dataset])
-<<<<<<< HEAD
 
     train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
         total_set,
-=======
-    total_set.targets = np.random.choice([-1, 1], size = len(total_len))
-
-    train_dataset_1, train_dataset_2, test_dataset = torch.utils.data.random_split(
-        total_set, 
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
         [train_size, train_size, total_len - 2 * train_size]
     )
 
@@ -583,7 +525,6 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', normalize=True, train_
     )
     return train_loader_1, train_loader_2, test_loader
 
-<<<<<<< HEAD
 
 def Lipschitzness(input1, input2, output1, output2):
     # L2 norm
@@ -594,28 +535,6 @@ def Lipschitzness(input1, input2, output1, output2):
 
 def random_evaluate(dataset, data_loader, model, size, num_sample, loss='l1', sanity_check=False):
     losses_list = []
-=======
-def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
-    losses_list = []
-    # model.eval()
-
-    for _ in range(num_sample):
-        sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
-
-        with torch.no_grad():
-            for _, X in enumerate(data_loader):
-                if synthetic == False:
-                    X = X[0]
-                X = X.cuda().float()
-                output1 = model(X[sample[0]])
-                output2 = model(X[sample[1]])
-                loss = torch.tensor(np.array([isoLossEval(output1, output2, type=loss).cpu().numpy()]))
-                losses_list.append(loss)
-                    
-            losses_array = torch.cat(losses_list, dim=0).cpu().numpy()
-
-    return losses_array
->>>>>>> c2dfbe6c8b732dd806bc759045e6aa782576c5df
 
     for _ in range(num_sample):
         sample = np.split(np.random.choice(len(data_loader.dataset), size=size * 2, replace=False), 2)
