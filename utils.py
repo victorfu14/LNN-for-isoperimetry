@@ -18,6 +18,9 @@ cifar10_std = (0.2507, 0.2507, 0.2507)
 cifar100_mean = (0.5071, 0.4867, 0.4408)
 cifar100_std = (0.2675, 0.2565, 0.2761)
 
+imgnet_mean=(0.485, 0.456, 0.406)
+imgnet_std=(0.229, 0.224, 0.225)
+
 mnist_mean = (0.1307)
 mnist_std = (0.3081)
 
@@ -38,6 +41,15 @@ std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
 
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
+
+mean_per_pixel = torch.load('mean_per_pixel.pt')
+std_per_pixel = torch.load('std_per_pixel.pt')
+
+cf100_mean_per_pixel = torch.load('cf100_mean_per_pixel.pt')
+cf100_std_per_pixel = torch.load('cf100_std_per_pixel.pt')
+
+mnist_mean_per_pixel = torch.load('mnist_mean_per_pixel.pt')
+mnist_std_per_pixel = torch.load('mnist_std_per_pixel.pt')
 
 formatter = logging.Formatter('%(message)s')
 
@@ -69,6 +81,7 @@ def get_args():
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--rand-label', action='store_true')
     parser.add_argument('--noise', action='store_true')
+    parser.add_argument('--per-pixel', action='store_true')
 
     # Training specifications
     parser.add_argument('--batch-size', default=128, type=int)
@@ -94,7 +107,7 @@ def get_args():
 
     # Dataset specifications
     parser.add_argument('--data-dir', default='./cifar-data', type=str)
-    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist', 'cifar5m'],
+    parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'gaussian', 'mnist', 'cifar5m', 'imagenet'],
                         help='dataset to use for training')
     parser.add_argument('--cifar5m-label', default=None, type=int, choices=[i for i in range(10)])
 
@@ -284,7 +297,7 @@ def cifar_5m(dir_, label=0):
 def cifar5m_init(dir_, label, transform, train, download):
     return CIFAR5M(dir_, label, transform, train)
 
-def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=None, label=None, add_noise=False):
+def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=None, label=None, add_noise=False, per_pixel=False):
     if dataset_name == 'cifar10':
         dataset_func = datasets.CIFAR10
         mean = cifar10_mean if dim is None else cifar10_maxpool_mean
@@ -297,6 +310,10 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         dataset_func = datasets.MNIST
         mean = mnist_pad_mean
         std = mnist_pad_std
+    elif dataset_name == 'imagenet':
+        dataset_func = datasets.ImageNet
+        mean = imgnet_mean
+        std = imgnet_std
     elif dataset_name == 'cifar5m':
         assert label is not None
         f = open('cifar5m.json')
@@ -304,7 +321,17 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         mean = data['cifar-5m'][label]['mean']
         std = data['cifar-5m'][label]['std']
         dataset_func = partial(cifar5m_init, label=label)
-
+    
+    if per_pixel:
+        if dataset_name == 'cifar10':
+            mean = mean_per_pixel
+            std = std_per_pixel
+        elif dataset_name == 'cifar100':
+            mean = cf100_mean_per_pixel
+            std = cf100_std_per_pixel
+        elif dataset_name == 'mnist':
+            mean = mnist_mean_per_pixel
+            std = mnist_std_per_pixel
 
     train_transform = transforms.Compose([
         transforms.ToTensor(),
@@ -314,19 +341,24 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         transforms.ToTensor(),
         transforms.Normalize(mean, std),
     ])
+    
     if dataset_name == 'mnist':
-        train_transform = transforms.Compose([transforms.Pad(2), train_transform])
-        test_transform = transforms.Compose([transforms.Pad(2), test_transform])
-        
+        train_transform = transforms.Compose([train_transform, transforms.Pad(2)])
+        test_transform = transforms.Compose([test_transform, transforms.Pad(2)])
+    
+    if dataset_name == 'imagenet':
+        train_transform = transforms.Compose([transforms.CenterCrop(256), train_transform])
+        test_transform = transforms.Compose([transforms.CenterCrop(256), test_transform])
+    
     num_workers = 4
     train_dataset = dataset_func(
         dir_, train=True, transform=train_transform, download=True)
     test_dataset = dataset_func(
         dir_, train=False, transform=test_transform, download=True)
     
-    if dataset == 'mnist' and add_noise:
-        train_noise = synthetic([28, 28], size=len(train_dataset.data), mean=0, var=1/1000000)
-        test_noise = synthetic([28, 28], size=len(test_dataset.data), mean=0, var=1/1000000)
+    if dataset_name == 'mnist' and add_noise:
+        train_noise = synthetic([28, 28], size=len(train_dataset.data), mean=0, var=1/10000)
+        test_noise = synthetic([28, 28], size=len(test_dataset.data), mean=0, var=1/10000)
         train_dataset.data = train_dataset.data.float() + train_noise
         test_dataset.data = test_dataset.data.float() + test_noise
 
@@ -336,6 +368,14 @@ def get_loaders(dir_, batch_size, dataset_name='cifar10', train_size=10000, dim=
         total_set, 
         [train_size, train_size, total_len - 2 * train_size]
     )
+
+    if dataset_name == 'cifar10' and add_noise:
+       for elem in total_set:
+        noise = [np.random.normal(0, 0.01) for _ in range(3*32*32)]
+        noise = torch.reshape(torch.tensor(noise), [3, 32, 32])
+        elem = list(elem)
+        elem[0] += noise
+        elem = tuple(elem)
 
     train_loader_1 = torch.utils.data.DataLoader(
         dataset=train_dataset_1,
@@ -384,7 +424,7 @@ def random_evaluate(synthetic, data_loader, model, size, num_sample, loss='l1'):
 def moment_evaluate(synthetic, data_loader, model, size, num_sample):
     model.eval()
     moments_dic = {}
-    moments_p = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    moments_p = [i for i in range(2, 30, 2)]
     for p in moments_p:
         moments_dic[p] = []
 
@@ -397,6 +437,11 @@ def moment_evaluate(synthetic, data_loader, model, size, num_sample):
                     X = X[0]
                 X = X.cuda().float()
                 output = model(X[sample]).cpu()
+                # noise = [np.random.normal(0, 1e-5) for _ in range(32*32)]
+                # noise = torch.reshape(torch.tensor(noise), [32, 32])
+                # output_noise = model(X[sample] + noise.cuda()).cpu()
+                # print(output, output_noise)
+                output = np.array(output, dtype=np.float64)
                 moments = []
                 for p in moments_p:
                     moments.append(scipy.stats.moment(output, moment=p)[0] ** (1 / p))

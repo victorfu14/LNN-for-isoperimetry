@@ -112,7 +112,7 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    args.run_name += ' adam moment eval'
+    args.run_name += ' adam moment eval float64'
     if args.noise:
         args.run_name += ' noisy'
 
@@ -130,7 +130,8 @@ def main():
         args.dataset, 
         train_size=args.train_size, 
         label=args.cifar5m_label,
-        add_noise=args.noise
+        add_noise=args.noise,
+        per_pixel=args.per_pixel
     ) if args.synthetic == False else get_synthetic_loaders(
         batch_size=args.batch_size,
         generate=args.syn_func,

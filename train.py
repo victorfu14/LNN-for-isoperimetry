@@ -57,7 +57,8 @@ def main():
         args.dataset, 
         train_size=args.train_size, 
         label=args.cifar5m_label,
-        add_noise=args.noise
+        add_noise=args.noise,
+        per_pixel=args.per_pixel
     )
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -165,7 +166,7 @@ def main():
         
         if not args.debug:
             wandb.log({"loss": train_loss, "lr": lr})
-            wandb.watch(model)
+            # wandb.watch(model)
 
         torch.save(model.state_dict(), last_model_path)
 
